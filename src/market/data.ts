@@ -1,5 +1,5 @@
 import { log } from "../log.js";
-import type { PublicApi } from "../okx/public.js";
+import type { PublicApi } from "./public-api.js";
 import { safeError } from "../redact.js";
 import { atr, bollinger, macd, pctChange, rsi, trendStats, zScore } from "./indicators.js";
 import type { Candle, CoinStats, Instrument, MarketView, Ticker } from "./types.js";

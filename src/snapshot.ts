@@ -1,7 +1,7 @@
-// Per-bee numeric snapshot for Jev. Numbers only, columnar, target < 400 input tokens.
+// Numeric snapshot for Jev. Numbers only, columnar, small.
 import { createHash } from "node:crypto";
-import { beeLine } from "./bees/common.js";
-import type { BeeBrain, BeeContext } from "./bees/types.js";
+import { grossNotionalUsd, maxTotalNotionalUsd, minutesSince, r2 } from "./agent/common.js";
+import { positionList, type AgentContext, type Brain } from "./agent/types.js";
 
 export interface Snapshot {
   state: Record<string, unknown>;
@@ -11,7 +11,24 @@ export interface Snapshot {
   approxTokens: number;
 }
 
-export function buildSnapshot(brain: BeeBrain, ctx: BeeContext): Snapshot {
+/** The book in one line: exposure, room, day P&L, trades and fee budget left. */
+export function bookLine(ctx: AgentContext): Record<string, number | string | null> {
+  const { agent, cfg, now } = ctx;
+  const gross = grossNotionalUsd(ctx);
+  const max = maxTotalNotionalUsd(ctx);
+  return {
+    positions: positionList(agent).length,
+    gross_usd: r2(gross, 0),
+    room_usd: r2(Math.max(0, max - gross), 0),
+    upl_usd: r2(agent.uplUsd, 0),
+    day_pnl_pct: r2(((agent.equityUsd - agent.dayStartEquityUsd) / agent.dayStartEquityUsd) * 100, 1),
+    flat_min: positionList(agent).length ? null : r2(minutesSince(agent.flatSince, now), 0),
+    trades: `${agent.tradesToday}/${cfg.risk.maxTradesPerDay}`,
+    fee_left: r2(cfg.risk.feeBudgetUsdDay - agent.feesTodayUsd),
+  };
+}
+
+export function buildSnapshot(brain: Brain, ctx: AgentContext): Snapshot {
   const ids = brain.snapshotCoins(ctx);
   let cols: string[] = [];
   const rows: Record<string, Array<number | string | null>> = {};
@@ -25,14 +42,10 @@ export function buildSnapshot(brain: BeeBrain, ctx: BeeContext): Snapshot {
   const d = new Date(ctx.now);
   const state: Record<string, unknown> = {
     utc: `${String(d.getUTCHours()).padStart(2, "0")}:${String(d.getUTCMinutes()).padStart(2, "0")}`,
-    me: beeLine(ctx),
+    book: bookLine(ctx),
     coins: { cols, rows },
+    attn: ctx.view.newsAvailable ? "news_z" : "volume_z",
   };
-  if (brain.id === "boozy") state.attn = ctx.view.newsAvailable ? "news_z" : "volume_z";
   const json = JSON.stringify(state);
-  return {
-    state,
-    hash: createHash("sha256").update(json).digest("hex").slice(0, 16),
-    approxTokens: Math.ceil(json.length / 3),
-  };
+  return { state, hash: createHash("sha256").update(json).digest("hex").slice(0, 16), approxTokens: Math.ceil(json.length / 3) };
 }

@@ -1,7 +1,7 @@
-import type { BeeId, OkxCreds } from "../config.js";
+import type { CoinbaseRest } from "../coinbase/rest.js";
+import { CoinbaseError } from "../coinbase/rest.js";
 import { log } from "../log.js";
 import type { Instrument, Ticker } from "../market/types.js";
-import type { OkxCli } from "../okx/cli.js";
 import { safeError } from "../redact.js";
 import { formatSz } from "./sizing.js";
 
@@ -19,7 +19,7 @@ export type OrderResult =
 
 export interface ExchangePosition {
   instId: string;
-  /** Signed contracts (net mode): + long, - short. */
+  /** Signed contracts: + long, - short. */
   pos: number;
   avgPx: number;
 }
@@ -31,19 +31,20 @@ export interface FundingBill {
   ts: number;
 }
 
+/** One account. The engine talks to the venue only through this. */
 export interface Executor {
-  readonly kind: "sim" | "okx";
-  init(bee: BeeId): Promise<void>;
-  market(bee: BeeId, req: OrderReq): Promise<OrderResult>;
-  positions(bee: BeeId): Promise<ExchangePosition[] | null>;
-  fundingBills(bee: BeeId): Promise<FundingBill[] | null>;
-  /** Fees OKX charged for these order ids (USD, positive = paid). */
-  feesFor(bee: BeeId, instIds: string[], ordIds: Set<string>): Promise<Map<string, number> | null>;
+  readonly kind: "sim" | "coinbase";
+  init(): Promise<void>;
+  market(req: OrderReq): Promise<OrderResult>;
+  /** Open positions on the venue, or null when the venue does not report them (sim). */
+  positions(): Promise<ExchangePosition[] | null>;
+  /** Funding settlements since the last call, or null when unavailable. */
+  fundingBills(): Promise<FundingBill[] | null>;
+  /** Fees the venue charged for these order ids (USD, positive = paid), or null when unavailable. */
+  feesFor(instIds: string[], ordIds: Set<string>): Promise<Map<string, number> | null>;
 }
 
-/**
- * MODE=dry: real market data, simulated taker fills at the touch (mid +/- half spread), no OKX private calls.
- */
+/** MODE=dry: real market data, simulated taker fills at the touch (bid/ask), no private calls. */
 export class SimExecutor implements Executor {
   readonly kind = "sim" as const;
   constructor(
@@ -54,7 +55,7 @@ export class SimExecutor implements Executor {
 
   async init(): Promise<void> {}
 
-  async market(_bee: BeeId, req: OrderReq): Promise<OrderResult> {
+  async market(req: OrderReq): Promise<OrderResult> {
     const { tickers, instruments } = this.market_();
     const t = tickers.get(req.instId);
     const inst = instruments.get(req.instId);
@@ -75,112 +76,157 @@ export class SimExecutor implements Executor {
   }
 }
 
-type Row = Record<string, string>;
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+const num = (v: unknown) => (v === undefined || v === null || v === "" ? NaN : Number(v));
+
+interface CbOrderResponse {
+  success?: boolean;
+  success_response?: { order_id?: string; product_id?: string; client_order_id?: string };
+  error_response?: { error?: string; message?: string; error_details?: string; preview_failure_reason?: string };
+}
+interface CbOrder {
+  order_id?: string;
+  status?: string;
+  filled_size?: string;
+  average_filled_price?: string;
+  total_fees?: string;
+  created_time?: string;
+  last_fill_time?: string;
+}
+interface CbFill {
+  order_id?: string;
+  product_id?: string;
+  commission?: string;
+}
+interface CbPosition {
+  product_id?: string;
+  side?: string;
+  number_of_contracts?: string;
+  avg_entry_price?: string;
+}
+
+export interface CoinbaseExecOpts {
+  /** Configured cap; passed on every order (Coinbase also enforces its own product maximum). */
+  leverage: number;
+  portfolioId?: string;
+  pollMs?: number;
+  pollTimeoutMs?: number;
+  now?: () => number;
+}
 
 /**
- * MODE=demo / live: market orders through the OKX Agent Trade Kit CLI, one profile per bee.
- * Isolated margin, net position mode, 2x leverage, reduceOnly on every close.
+ * MODE=live: Coinbase Advanced Trade market IOC orders on Coinbase Derivatives (CFM) products, sized in contracts.
+ * Fills, fees and positions come back from Coinbase; reconciliation in the engine compares them to our books.
  */
-export class OkxExecutor implements Executor {
-  readonly kind = "okx" as const;
-  private leverageSet = new Set<string>();
+export class CoinbaseExecutor implements Executor {
+  readonly kind = "coinbase" as const;
+  private readonly pollMs: number;
+  private readonly pollTimeoutMs: number;
+  private readonly now: () => number;
 
   constructor(
-    private cli: OkxCli,
-    private creds: Partial<Record<BeeId, OkxCreds>>,
-    private demo: boolean,
+    private rest: CoinbaseRest,
     private instrument: (instId: string) => Instrument | undefined,
-    private leverage: number,
-  ) {}
-
-  private run<T>(bee: BeeId, args: string[]): Promise<T> {
-    const c = this.creds[bee];
-    if (!c) throw new Error(`no OKX credentials for ${bee}`);
-    return this.cli.run<T>({ args, bee, creds: c, demo: this.demo });
+    private opts: CoinbaseExecOpts,
+  ) {
+    this.pollMs = opts.pollMs ?? 500;
+    this.pollTimeoutMs = opts.pollTimeoutMs ?? 15_000;
+    this.now = opts.now ?? Date.now;
   }
 
-  async init(bee: BeeId): Promise<void> {
-    const [cfg] = await this.run<Row[]>(bee, ["account", "config"]);
-    if (cfg?.posMode && cfg.posMode !== "net_mode") {
-      log.info("setting net position mode", { bee });
-      await this.run(bee, ["account", "set-position-mode", "--posMode", "net_mode"]);
-    }
+  async init(): Promise<void> {
+    // Proves the key works and the futures account exists before the first tick.
+    const s = await this.rest.signed<{ balance_summary?: { futures_buying_power?: { value?: string } } }>("GET", "/api/v3/brokerage/cfm/balance_summary");
+    log.info("coinbase futures account ready", { buyingPower: s.balance_summary?.futures_buying_power?.value ?? "?" });
   }
 
-  private async ensureLeverage(bee: BeeId, instId: string): Promise<void> {
-    const key = `${bee}:${instId}`;
-    if (this.leverageSet.has(key)) return;
-    // /account/leverage-info 404s on EEA; set it and trust the positions read-back.
-    await this.run(bee, ["futures", "leverage", "--instId", instId, "--lever", String(this.leverage), "--mgnMode", "isolated"]);
-    this.leverageSet.add(key);
-  }
-
-  async market(bee: BeeId, req: OrderReq): Promise<OrderResult> {
+  async market(req: OrderReq): Promise<OrderResult> {
     const inst = this.instrument(req.instId);
-    if (!inst) return { ok: false, error: { code: "INST", message: "unknown instrument" }, state: "rejected" };
+    if (!inst) return { ok: false, error: { code: "NO_INSTRUMENT", message: `unknown instrument ${req.instId}` }, state: "rejected" };
+    const body = {
+      client_order_id: req.clOrdId,
+      product_id: req.instId,
+      side: req.side.toUpperCase(),
+      order_configuration: { market_market_ioc: { base_size: formatSz(req.contracts, inst) } },
+      leverage: String(this.opts.leverage),
+      margin_type: "ISOLATED",
+      ...(this.opts.portfolioId ? { retail_portfolio_id: this.opts.portfolioId } : {}),
+    };
+    let r: CbOrderResponse;
     try {
-      if (!req.reduceOnly) await this.ensureLeverage(bee, req.instId);
-      const args = ["futures", "place", "--instId", req.instId, "--side", req.side, "--ordType", "market", "--sz", formatSz(req.contracts, inst), "--tdMode", "isolated", "--clOrdId", req.clOrdId];
-      if (req.reduceOnly) args.push("--reduceOnly");
-      const [ack] = await this.run<Row[]>(bee, args);
-      if (!ack || (ack.sCode && ack.sCode !== "0")) {
-        return { ok: false, error: { code: ack?.sCode ?? "NOACK", message: ack?.sMsg ?? "no ack" }, state: "rejected" };
+      r = await this.rest.signed<CbOrderResponse>("POST", "/api/v3/brokerage/orders", body);
+    } catch (err) {
+      const e = safeError(err);
+      // A timeout after the request may have reached Coinbase: the order might exist. Tell the engine so it reconciles.
+      const state = err instanceof CoinbaseError && err.status >= 400 && err.status < 500 ? "rejected" : "unknown";
+      return { ok: false, error: e, state };
+    }
+    if (!r.success || !r.success_response?.order_id) {
+      const e = r.error_response ?? {};
+      return { ok: false, error: { code: e.error ?? "REJECTED", message: e.preview_failure_reason ?? e.message ?? e.error_details ?? "order rejected" }, state: "rejected" };
+    }
+    const ordId = r.success_response.order_id;
+    const deadline = this.now() + this.pollTimeoutMs;
+    let last: CbOrder | null = null;
+    while (this.now() < deadline) {
+      try {
+        const o = await this.rest.signed<{ order?: CbOrder }>("GET", `/api/v3/brokerage/orders/historical/${encodeURIComponent(ordId)}`);
+        last = o.order ?? null;
+      } catch (err) {
+        log.warn("coinbase order poll failed", { err: safeError(err) });
       }
-      // Market orders fill at once; poll for the fill details. The order is already placed, so a transient
-      // read error here (seen: 50004 on OKX demo) must not end the poll: keep trying before reporting "unknown".
-      for (let i = 0; i < 12; i++) {
-        let o: Row | undefined;
-        try {
-          [o] = await this.run<Row[]>(bee, ["futures", "get", "--instId", req.instId, "--clOrdId", req.clOrdId]);
-        } catch (err) {
-          log.warn("fill poll failed, retrying", { bee, err: safeError(err) });
-          await sleep(Math.min(4000, 400 * 2 ** Math.min(i, 3)));
-          continue;
-        }
-        if (o && (o.state === "filled" || ((o.state === "canceled" || o.state === "mmp_canceled") && Number(o.accFillSz) > 0))) {
-          return { ok: true, ordId: o.ordId ?? ack.ordId ?? null, contracts: Number(o.accFillSz), avgPx: Number(o.avgPx), feeUsd: -Number(o.fee || 0), ts: Number(o.uTime || o.cTime || Date.now()) };
-        }
-        if (o && o.state === "canceled") return { ok: false, error: { code: "CANCELED", message: "order canceled unfilled" }, state: "rejected" };
-        await sleep(300);
-      }
-      return { ok: false, error: { code: "UNCONFIRMED", message: "fill not confirmed; reconciliation will settle it" }, state: "unknown" };
-    } catch (err) {
-      return { ok: false, error: safeError(err), state: "unknown" };
+      const st = last?.status ?? "";
+      if (st === "FILLED" || st === "CANCELLED" || st === "EXPIRED" || st === "FAILED") break;
+      await sleep(this.pollMs);
     }
+    const filled = num(last?.filled_size);
+    if (!last || !(filled > 0)) {
+      const st = last?.status ?? "UNKNOWN";
+      return { ok: false, error: { code: st, message: `order ${st.toLowerCase()} with no fill` }, state: last ? "rejected" : "unknown" };
+    }
+    return {
+      ok: true,
+      ordId,
+      contracts: filled,
+      avgPx: num(last.average_filled_price),
+      feeUsd: num(last.total_fees) || 0,
+      ts: Date.parse(last.last_fill_time ?? last.created_time ?? "") || this.now(),
+    };
   }
 
-  async positions(bee: BeeId): Promise<ExchangePosition[] | null> {
-    try {
-      const rows = await this.run<Row[]>(bee, ["futures", "positions"]);
-      return rows.filter((r) => Number(r.pos) !== 0).map((r) => ({ instId: r.instId!, pos: Number(r.pos), avgPx: Number(r.avgPx) }));
-    } catch (err) {
-      log.warn("positions read failed", { bee, err: safeError(err) });
-      return null;
+  async positions(): Promise<ExchangePosition[]> {
+    const r = await this.rest.signed<{ positions?: CbPosition[] }>("GET", "/api/v3/brokerage/cfm/positions");
+    const out: ExchangePosition[] = [];
+    for (const p of r.positions ?? []) {
+      const n = num(p.number_of_contracts);
+      if (!p.product_id || !(n > 0)) continue;
+      const sign = (p.side ?? "").toUpperCase() === "SHORT" ? -1 : 1;
+      out.push({ instId: p.product_id, pos: sign * n, avgPx: num(p.avg_entry_price) });
     }
+    return out;
   }
 
-  async fundingBills(bee: BeeId): Promise<FundingBill[] | null> {
-    try {
-      const rows = await this.run<Row[]>(bee, ["account", "bills", "--instType", "FUTURES", "--limit", "100"]);
-      // type 8 = funding fee
-      return rows.filter((r) => r.type === "8").map((r) => ({ billId: r.billId!, instId: r.instId || null, amountUsd: Number(r.balChg), ts: Number(r.ts) }));
-    } catch (err) {
-      log.warn("bills read failed", { bee, err: safeError(err) });
-      return null;
-    }
+  async fundingBills(): Promise<null> {
+    // Coinbase Derivatives settles perpetual funding into the futures balance; no per-bill endpoint is documented.
+    return null;
   }
 
-  async feesFor(bee: BeeId, instIds: string[], ordIds: Set<string>): Promise<Map<string, number> | null> {
+  async feesFor(instIds: string[], ordIds: Set<string>): Promise<Map<string, number> | null> {
+    if (!ordIds.size) return new Map();
     try {
+      const r = await this.rest.signed<{ fills?: CbFill[] }>("GET", "/api/v3/brokerage/orders/historical/fills", undefined, {
+        order_ids: [...ordIds].join(","),
+        product_ids: instIds.join(","),
+        limit: 250,
+      });
       const out = new Map<string, number>();
-      for (const instId of instIds) {
-        const rows = await this.run<Row[]>(bee, ["futures", "fills", "--instId", instId]);
-        for (const r of rows) if (r.ordId && ordIds.has(r.ordId)) out.set(r.ordId, (out.get(r.ordId) ?? 0) - Number(r.fee || 0));
+      for (const f of r.fills ?? []) {
+        if (!f.order_id || !ordIds.has(f.order_id)) continue;
+        out.set(f.order_id, (out.get(f.order_id) ?? 0) + (num(f.commission) || 0));
       }
       return out;
     } catch (err) {
-      log.warn("fills read failed", { bee, err: safeError(err) });
+      log.warn("coinbase fills lookup failed", { err: safeError(err) });
       return null;
     }
   }

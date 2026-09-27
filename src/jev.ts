@@ -3,7 +3,7 @@
 
 import { createRequire } from "node:module";
 import type * as SDK from "@typesafe-ai/sdk" with { "resolution-mode": "require" };
-import type { Menu } from "./bees/types.js";
+import type { Menu } from "./agent/types.js";
 import { safeError } from "./redact.js";
 
 // @typesafe-ai/sdk 0.6.0 ships only the CJS build (its ESM export path is missing), so load it via require.
