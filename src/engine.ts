@@ -793,8 +793,11 @@ export class Engine {
       recon: this.recon,
       market: {
         refreshedAt: view.ts,
-        universe: view.gated.map(coin),
-        spreadBlocked: view.spreadBlocked.map((i) => ({ coin: coin(i), spreadBp: Number((view.tickers.get(i)?.spreadBp ?? 0).toFixed(1)) })),
+        universe: [...new Set(view.gated.map(coin))],
+        spreadBlocked: view.spreadBlocked.map((i) => {
+          const bp = view.tickers.get(i)?.spreadBp;
+          return { coin: coin(i), spreadBp: bp !== undefined && Number.isFinite(bp) ? Number(bp.toFixed(1)) : null };
+        }),
         attention: view.newsAvailable ? "news" : "volume",
       },
     };

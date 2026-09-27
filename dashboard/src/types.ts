@@ -80,7 +80,7 @@ export interface Snapshot {
   agent: PublicAgent;
   jev: { spentTodayUsd: number; dailyCapUsd: number; capTripped: boolean; down: boolean };
   recon: { ok: boolean | null; detail: string; ts: number };
-  market: { refreshedAt: number; universe: string[]; spreadBlocked: Array<{ coin: string; spreadBp: number }>; attention: string };
+  market: { refreshedAt: number; universe: string[]; spreadBlocked: Array<{ coin: string; spreadBp: number | null }>; attention: string };
   watching: number;
   update: { current: string; latest: string } | null;
 }

@@ -43,13 +43,22 @@ export function qs(query: Q | undefined): string {
   return s ? `?${s}` : "";
 }
 
+const sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms));
+/** Public endpoints allow ~10 requests/s per IP; start requests no closer together than this. */
+const MIN_SPACING_MS = 120;
+const RETRY_429_MS = [400, 1200];
+
 class Gate {
   private running = 0;
   private waiting: Array<() => void> = [];
+  private nextStartAt = 0;
   constructor(private max: number) {}
   async run<T>(fn: () => Promise<T>): Promise<T> {
     if (this.running >= this.max) await new Promise<void>((r) => this.waiting.push(r));
     this.running++;
+    const wait = this.nextStartAt - Date.now();
+    this.nextStartAt = Math.max(this.nextStartAt, Date.now()) + MIN_SPACING_MS;
+    if (wait > 0) await sleep(wait);
     try {
       return await fn();
     } finally {
@@ -71,7 +80,7 @@ export function createCoinbaseRest(opts: RestOpts): CoinbaseRest {
     const headers: Record<string, string> = { accept: "application/json" };
     if (key) headers.authorization = `Bearer ${buildJwt(key, method, host, path)}`;
     if (body !== undefined) headers["content-type"] = "application/json";
-    return gate.run(async () => {
+    const once = async () => {
       let res: Response;
       try {
         res = await fetchFn(url, { method, headers, body: body === undefined ? undefined : JSON.stringify(body), signal: AbortSignal.timeout(opts.timeoutMs) });
@@ -92,7 +101,17 @@ export function createCoinbaseRest(opts: RestOpts): CoinbaseRest {
         throw new CoinbaseError(res.status, e.error ?? String(res.status), e.message ?? e.error_details ?? `HTTP ${res.status}`);
       }
       return j as T;
-    });
+    };
+    // Rate-limited GETs are retried with backoff; orders (POST) are never resent.
+    for (let attempt = 0; ; attempt++) {
+      try {
+        return await gate.run(once);
+      } catch (err) {
+        const backoff = RETRY_429_MS[attempt];
+        if (method !== "GET" || !(err instanceof CoinbaseError) || err.status !== 429 || backoff === undefined) throw err;
+        await sleep(backoff);
+      }
+    }
   }
 
   return {

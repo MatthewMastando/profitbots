@@ -91,9 +91,9 @@ export function App() {
               </div>
               {blocked.length > 0 && (
                 <div className="chips blocked num">
-                  {blocked.slice(0, 8).map((b) => (
-                    <span key={b.coin} title="spread gate">
-                      {b.coin} <span className="dim">{b.spreadBp}bp</span>
+                  {blocked.slice(0, 8).map((b, i) => (
+                    <span key={`${b.coin}-${i}`} title="spread gate">
+                      {b.coin} <span className="dim">{b.spreadBp === null ? "no quote" : `${b.spreadBp}bp`}</span>
                     </span>
                   ))}
                 </div>

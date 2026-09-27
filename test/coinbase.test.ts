@@ -92,6 +92,16 @@ describe("coinbase rest", () => {
     expect(f.calls[2]!.init.body).toBe('{"a":1}');
   });
 
+  it("a 429 on a GET is retried with backoff; a 429 on a POST is not", async () => {
+    let n = 0;
+    const f = fakeFetch((c) => (c.init.method === "POST" || ++n < 3 ? { status: 429, body: { error: "RATE_LIMITED" } } : { body: { ok: true } }));
+    const rest = createCoinbaseRest({ apiBase: "https://api.coinbase.com", timeoutMs: 1000, concurrency: 1, key: { keyName: "k", privateKey: ec.privateKey.export({ type: "sec1", format: "pem" }).toString() }, fetchFn: f.fn });
+    await expect(rest.get("/x")).resolves.toEqual({ ok: true });
+    expect(n).toBe(3);
+    await expect(rest.signed("POST", "/api/v3/brokerage/orders", { a: 1 })).rejects.toMatchObject({ status: 429 });
+    expect(f.calls.filter((c) => c.init.method === "POST")).toHaveLength(1);
+  });
+
   it("errors carry status + Coinbase code; a timeout is a network error; no key means no signed calls", async () => {
     const f = fakeFetch((c) => (c.url.includes("slow") ? { body: {}, delayMs: 200 } : { status: 401, body: { error: "UNAUTHORIZED", message: "bad jwt" } }));
     const rest = createCoinbaseRest({ apiBase: "https://api.coinbase.com", timeoutMs: 20, concurrency: 1, fetchFn: f.fn });
