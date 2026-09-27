@@ -8,7 +8,7 @@ export class Alerts {
   constructor(private url: string | undefined) {}
 
   send(text: string, now = Date.now()): void {
-    const t = redactString(`[beebots] ${text}`);
+    const t = redactString(`[profitbots] ${text}`);
     log.warn("alert", { text: t });
     if (!this.url) return;
     const last = this.sent.get(t);

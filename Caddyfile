@@ -1,44 +1,23 @@
-# beebots: SITE_ADDRESS is PUBLIC_DOMAIN when set (Caddy gets the HTTPS certificate itself), otherwise :80 (plain HTTP on any address).
+# profitbots: SITE_ADDRESS is PUBLIC_DOMAIN when set (Caddy gets the HTTPS certificate itself), otherwise :80 (plain HTTP on any address).
 {$SITE_ADDRESS::80} {
 	encode zstd gzip
+
+	# Optional: put the whole dashboard behind a password. Uncomment and paste a hash from
+	#   docker run --rm caddy caddy hash-password
+	# basic_auth {
+	# 	me <hash>
+	# }
 
 	# Read-only engine endpoints. Only GET is proxied; the engine refuses everything else too.
 	@api {
 		method GET
-		path /events /snapshot /history /equity /visit /health /profile /bee-image/* /setup/status /hive/status
+		path /events /snapshot /history /equity /analytics /trades /health /profile
 	}
 	handle @api {
 		reverse_proxy engine:8080 {
 			# Server-sent events: never buffer.
 			flush_interval -1
 		}
-	}
-
-	# First-run Setup writes. The engine only accepts them before Setup is done, within the setup window.
-	@setup {
-		method POST
-		path /setup/*
-	}
-	handle @setup {
-		request_body {
-			max_size 64KB
-		}
-		reverse_proxy engine:8080 {
-			header_up X-Forwarded-Proto {scheme}
-		}
-	}
-
-	# Joining or leaving the Hive from the dashboard. The engine needs the owner password for both.
-	# (/hive/report is the live leaderboard's own route; the engine does not serve it.)
-	@hive {
-		method POST
-		path /hive/join /hive/leave
-	}
-	handle @hive {
-		request_body {
-			max_size 16KB
-		}
-		reverse_proxy engine:8080
 	}
 
 	# Static dashboard, built into the image. Hashed assets are immutable; index.html revalidates.

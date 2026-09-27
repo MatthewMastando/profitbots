@@ -252,7 +252,7 @@ a.counter.host:hover {
   padding: 0.15rem 0.5rem;
   cursor: pointer;
 }
-/* the logo line is narrower than the line under it, so the Hive button costs the header no width */
+
 .side {
   font-weight: 800;
   font-size: 0.95rem;

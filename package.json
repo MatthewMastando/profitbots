@@ -19,9 +19,7 @@
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run",
-    "e2e:fake-jev": "tsx test/e2e-dry.harness.ts",
-    "universe": "tsx src/tools/universe.ts"
+    "test": "vitest run"
   },
   "dependencies": {
     "@typesafe-ai/sdk": "0.6.0",

@@ -1,12 +1,12 @@
-# Cost model (measured and read 2026-09-24)
+# Cost model
 
-Stake: **$1,000**, split **$333** per bee. Max notional per bee at 2x: **~$666**.
+Stake: **$1,000** (default `START_EQUITY_USD`). Gross notional budget: min(`MAX_TOTAL_NOTIONAL_USD`, equity × `MAX_LEVERAGE`).
 
 ## 1. Jev
 
 Price: **$0.042 per 1M input tokens, output free** (docs.typesafe.ai/models, and Vercel AI Gateway lists the same). Limits: 1,200 req/min, 250k tok/s.
 
-Cost per day = `3 bees × (86,400,000 / TICK_MS) × tokens_per_call × $0.042 / 1e6`
+Cost per day = `(86,400,000 / TICK_MS) × tokens_per_call × $0.042 / 1e6` (one call per tick covers every lens and position; the call is ~2-3x larger than a single bee's was).
 
 | tick | tokens/call | decisions/min (all 3) | $/day | $/30 days |
 |---|---|---|---|---|
@@ -18,36 +18,24 @@ Cost per day = `3 bees × (86,400,000 / TICK_MS) × tokens_per_call × $0.042 / 
 
 **Recommendation:** start at `TICK_MS=2000` with `JEV_DAILY_USD_CAP=5`. Drop to 1 s for filming sessions if the shot needs more motion. Measure real `usage.input_tokens` in phase 4; the table is only as good as the tokens-per-call guess.
 
-## 2. OKX trading fees (X-Perps, EEA)
+## 2. Coinbase Derivatives fees
 
-- **Maker 0.020% / taker 0.050%**, read off the EEA fee endpoint and corroborated by the PRIIPs KID (2026-09-23). Bees use market orders only, so **every fill is taker**.
-- Round trip at notional N: `0.001 × N` in fees **plus the spread** (≈ spread_bp × N / 10,000).
-- At full 2x (~$666): **~$0.67 fees per round trip** + spread.
-
-Default budgets in `.env`:
-
-| bee | typical size | max trades/day | fee budget/day | worst case/30 days |
-|---|---|---|---|---|
-| breezy | $10-$666, trend-scaled | ~1 | $0.50 | $15 |
-| bizzy | ~$265 | 6 | $1.50 | $45 |
-| boozy | $400-$666 | 8 | $3.00 (incl. spread) | $90 |
-| **total** | | | **$5.00** | **$150 (15% of stake)** |
-
-Budgets are hard caps in code. Once a bee spends its daily budget it can only hold or close until 00:00 UTC.
+- Coinbase Financial Markets charges a **per-contract commission** on futures (retail nano contracts ~$0.15-$0.20 per side at the time of writing; check the current fee schedule at coinbase.com/derivatives). The engine models this as `TAKER_FEE_RATE` (default 0.05% of notional) in paper mode and reads the real commission from each fill in live mode.
+- The agent uses market IOC orders only, so every fill pays the taker side plus the spread (≈ spread_bp × N / 10,000). `SPREAD_GATE_BPS` refuses coins whose spread is too wide.
+- `FEE_BUDGET_USD_DAY` and `MAX_TRADES_PER_DAY` are hard caps: once spent, the agent can only hold or close until 00:00 UTC.
 
 ## 3. Funding
 
-X-Perps charge continuous funding, settled at 00:00, 08:00 and 16:00 UTC, capped at ±0.75% per interval. On 2026-09-24 DOGE read 0.0100% per interval. It is roughly 4-6%/yr of notional for a long in a normal market, so **~$3-5/month per bee held at full 2x**. It can flip to a credit when funding goes negative, which is nice on screen.
+Coinbase's perpetual-style futures charge funding hourly, accrued against the position. In paper mode the engine charges it at 00:00 / 08:00 / 16:00 UTC from the current rate; live, the exchange settles it. A long held at full size in a normal market costs roughly 4-8%/yr of notional; it turns into a credit when funding is negative.
 
 ## 4. Infra
 
 | item | cost |
 |---|---|
-| Hostinger KVM 2 | $8.99/mo intro (24-month term), renews $14.99 |
-| OKX account, sub-accounts, API, demo | free |
-| Coinbase → OKX (USDC on Base) | cents |
-| OKX → Coinbase (USDC on Arbitrum) | 0.0065 USDC (Base 0.042, **never Ethereum mainnet: 1.46**) |
+| VPS (Hetzner CX22 / DigitalOcean basic / Hostinger KVM 1) | $4-9/mo |
+| Coinbase account, Derivatives enablement, CDP API key | free |
+| Domain for HTTPS (optional) | ~$10-15/yr |
 
-## 5. All-in for the 30-day run (budget ceiling)
+## 5. All-in (budget ceiling, 30 days)
 
-Jev ~$90-200, trading fees ≤ $150, funding ~$10-15, VPS ~$9, domain ~$27. **About $290-400 of friction on a $1,000 stake.** That is exactly why the cost counters belong on screen: the bees have to beat the house, and viewers can watch the house take its cut in real time.
+Jev $10-60 depending on `TICK_MS`, fees ≤ `FEE_BUDGET_USD_DAY` × 30, funding ~$10-30, VPS ~$5-9. The dashboard's cost counters show the house's cut in real time; the agent's job is to beat it.
