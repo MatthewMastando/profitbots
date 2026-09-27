@@ -1,4 +1,5 @@
 import { describe, expect, it } from "vitest";
+import { MARGIN_HEADROOM } from "../src/bees/common.js";
 import { bizzy, fadeSetup } from "../src/bees/bizzy.js";
 import { boozy, rankCandidates } from "../src/bees/boozy.js";
 import { breezy, breezySizeFrac } from "../src/bees/breezy.js";
@@ -85,7 +86,7 @@ describe("breezy", () => {
     const calm = coin("BTC", { trend: trend({ score: 9, rv90Pct: 20 }) });
     expect(breezySizeFrac(calm, ctx("breezy", b, view([calm])))).toBe(1);
     const wild = coin("BTC", { trend: trend({ score: 9, rv90Pct: 100 }) });
-    expect(breezySizeFrac(wild, ctx("breezy", b, view([wild])))).toBeCloseTo((333 * 0.6) / 666, 6);
+    expect(breezySizeFrac(wild, ctx("breezy", b, view([wild])))).toBeCloseTo((333 * 0.6) / (666 * MARGIN_HEADROOM), 6);
     const flat = coin("BTC", { trend: trend({ score: 0, rv90Pct: 50 }) });
     expect(breezySizeFrac(flat, ctx("breezy", b, view([flat])))).toBe(0.5);
     const weak = coin("BTC", { trend: trend({ score: 2, rv90Pct: 50 }) });
@@ -94,10 +95,10 @@ describe("breezy", () => {
   it("rebalances up when over 25% of max below target, not when near it or against the trend", () => {
     const s = coin("BTC", { trend: trend({ score: 9, rv90Pct: 20 }) }, 80000);
     const v = view([s]);
-    // one contract = $1 at the fixture price: 100 contracts = $100, target = $666
+    // one contract = $1 at the fixture price: 100 contracts = $100, target = max = $666 x MARGIN_HEADROOM
     const small = breezy.rebalance!(ctx("breezy", bee("breezy", { position: position(s, { contracts: 100 }), flatSince: null }), v));
     expect(small).toMatchObject({ kind: "add" });
-    expect(small!.sizeFrac).toBeCloseTo(566 / 666, 6);
+    expect(small!.sizeFrac).toBeCloseTo((666 * MARGIN_HEADROOM - 100) / (666 * MARGIN_HEADROOM), 6);
     expect(breezy.rebalance!(ctx("breezy", bee("breezy", { position: position(s, { contracts: 600 }), flatSince: null }), v))).toBeNull();
     expect(breezy.rebalance!(ctx("breezy", bee("breezy", { position: position(s, { contracts: 100, side: "short" }), flatSince: null }), v))).toBeNull();
   });

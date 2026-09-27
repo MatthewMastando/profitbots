@@ -20,6 +20,8 @@ const FUNDING_HOURS_UTC = [0, 8, 16];
 const RECON_MS = 5 * 60_000;
 /** How often a benched bee gets a live P&L row in the stream. */
 const PULSE_MS = 4_000;
+/** How long a bee opens nothing after the exchange rejects one of its new orders. */
+export const ORDER_REJECT_PAUSE_MS = 10 * 60_000;
 const EQUITY_SNAPSHOT_MS = 10_000;
 
 export interface EngineDeps {
@@ -62,6 +64,7 @@ function requiredAnswer(label: string): JevAnswer {
 export class Engine {
   readonly bees = {} as Record<BeeId, BeeState>;
   private last = {} as Partial<Record<BeeId, LastDecision>>;
+  private orderPauseUntil = {} as Partial<Record<BeeId, number>>;
   private now: () => number;
   private ticking = false;
   private stopped = false;
@@ -563,6 +566,12 @@ export class Engine {
     const now = this.now();
     const inst = this.d.feed.view().instruments.get(instId);
     if (!inst) return false;
+    // After the exchange rejects a new order, this bee opens nothing for ORDER_REJECT_PAUSE_MS (it used to resend
+    // every tick). Closes (reduceOnly) are never paused: stops must always try.
+    if (!reduceOnly && now < (this.orderPauseUntil[id] ?? 0)) {
+      log.info("new orders paused after an exchange rejection", { bee: id, coin: inst.coin, purpose, untilS: Math.round(((this.orderPauseUntil[id] ?? 0) - now) / 1000) });
+      return false;
+    }
     const clOrdId = `${id.slice(0, 2)}${now.toString(36)}${(this.seq++ % 1296).toString(36).padStart(2, "0")}`;
     const orderId = db.insertOrder({ decisionId, bee: id, ts: now, clOrdId, instId, side, contracts, reduceOnly, purpose });
     bus.emit("order", { bee: id, coin: inst.coin, side, contracts, purpose, clOrdId, state: "sent" }, now);
@@ -572,6 +581,10 @@ export class Engine {
       bus.emit("order", { bee: id, coin: inst.coin, side, contracts, purpose, state: res.state, error: res.error });
       log.warn("order failed", { bee: id, coin: inst.coin, purpose, err: res.error });
       if (res.state === "unknown") this.lastReconAt = 0; // reconcile on the next tick
+      if (!reduceOnly) {
+        this.orderPauseUntil[id] = now + ORDER_REJECT_PAUSE_MS;
+        this.d.alerts.send(`${this.d.cfg.slots[id].name}: ${inst.coin} ${purpose} order rejected (${res.error.code} ${res.error.message}); new orders paused ${ORDER_REJECT_PAUSE_MS / 60_000} min`);
+      }
       return false;
     }
     db.updateOrder(orderId, "filled", res.ordId, null);

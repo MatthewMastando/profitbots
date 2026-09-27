@@ -39,9 +39,12 @@ export interface OkxCli {
 }
 
 /** Pull an OKX error code like 51008 out of the CLI's stderr, if there is one. */
-function parseCliError(stderr: string, stdout: string): OkxCliError {
+export function parseCliError(stderr: string, stdout: string): OkxCliError {
   const text = `${stderr}\n${stdout}`;
   const code = /\b(5\d{4}|50\d{3})\b/.exec(text)?.[1] ?? "CLI";
+  // OKX's own reason, when the CLI prints the JSON response (the first line alone can be just "[").
+  const okxMsg = /"sMsg"\s*:\s*"([^"]+)"/.exec(text)?.[1] ?? /"msg"\s*:\s*"([^"]+)"/.exec(text)?.[1];
+  if (okxMsg) return new OkxCliError(code, redactString(okxMsg).slice(0, 240));
   const line =
     text
       .split("\n")

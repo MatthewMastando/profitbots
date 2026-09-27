@@ -1,5 +1,6 @@
 // Phase 5: every cap, gate and forcing rule, in both directions.
 import { describe, expect, it } from "vitest";
+import { MARGIN_HEADROOM } from "../src/bees/common.js";
 import { bizzy } from "../src/bees/bizzy.js";
 import { boozy } from "../src/bees/boozy.js";
 import { breezy } from "../src/bees/breezy.js";
@@ -173,7 +174,8 @@ describe("bizzy: waits for her breakout", () => {
 
   it("takes the breakout at full size (2x)", () => {
     const r = run(ctx("bizzy", bee("bizzy"), V), bizzy, prop(open(SOL.instId, "long", "strict", 1)));
-    expect(r.action).toMatchObject({ kind: "open", notionalUsd: 666 });
+    expect(r.action).toMatchObject({ kind: "open" });
+    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(666 * MARGIN_HEADROOM, 5);
   });
 });
 
@@ -191,7 +193,7 @@ describe("breezy: open gate and never flat", () => {
     expect(r.forcedBy).toBe("max_flat");
     expect(r.action).toMatchObject({ kind: "open", instId: BTC.instId, side: "long" });
     // Floor of half of max, or |score|/9 when larger (score 5 -> 5/9), under the 60% vol cap.
-    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo((5 / 9) * 666, 5);
+    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo((5 / 9) * 666 * MARGIN_HEADROOM, 5);
   });
 
   it("low conviction with high probability is still vetoed", () => {
@@ -231,7 +233,7 @@ describe("breezy: code keeps her at target size", () => {
     const r = run(ctx("breezy", b, view([BTC])), breezy, prop({ kind: "hold" }));
     expect(r.forcedBy).toBe("rebalance");
     expect(r.action).toMatchObject({ kind: "add" });
-    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(656, 5);
+    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(666 * MARGIN_HEADROOM - 10, 5);
   });
   it("no rebalance while benched", () => {
     const BTC = coin("BTC", { trend: trend({ score: 9, rv90Pct: 20 }) }, 80000);
@@ -250,12 +252,12 @@ describe("boozy: always holding something", () => {
 
   it("the forced ape is 1x equity (half of max)", () => {
     const r = run(ctx("boozy", bee("boozy", { flatSince: NOW - 2000 }), V), boozy, null, "no_options");
-    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(0.5 * 666, 5);
+    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(0.5 * 666 * MARGIN_HEADROOM, 5);
   });
 
   it("always enters at 1x whatever the conviction; size comes from pyramiding", () => {
-    expect(run(ctx("boozy", bee("boozy"), V), boozy, prop(open(SOL.instId, "long", "strict", 0.5), 0.5, 3)).action).toMatchObject({ notionalUsd: 333 });
-    expect(run(ctx("boozy", bee("boozy"), V), boozy, prop(open(SOL.instId, "long", "strict", 0.5), 0.5, 0)).action).toMatchObject({ notionalUsd: 333 });
+    expect(run(ctx("boozy", bee("boozy"), V), boozy, prop(open(SOL.instId, "long", "strict", 0.5), 0.5, 3)).action).toMatchObject({ notionalUsd: 333 * MARGIN_HEADROOM });
+    expect(run(ctx("boozy", bee("boozy"), V), boozy, prop(open(SOL.instId, "long", "strict", 0.5), 0.5, 0)).action).toMatchObject({ notionalUsd: 333 * MARGIN_HEADROOM });
   });
 });
 
@@ -283,7 +285,7 @@ describe("no hold while flat, and menu sanity", () => {
 describe("size cap: 2x and the absolute ceiling", () => {
   it("never exceeds MAX_LEVERAGE x equity", () => {
     const r = run(ctx("boozy", bee("boozy", { equityUsd: 200, dayStartEquityUsd: 200 }), V), boozy, prop(open(SOL.instId), 0.9, 3));
-    expect((r.action as { notionalUsd: number }).notionalUsd).toBe(400);
+    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(400 * MARGIN_HEADROOM, 5);
   });
 
   it("never exceeds MAX_NOTIONAL_USD_PER_BEE even with a big (demo) balance", () => {
@@ -297,13 +299,13 @@ describe("size cap: 2x and the absolute ceiling", () => {
 
   it("the live ramp shrinks size", () => {
     const r = run(ctx("boozy", bee("boozy"), V), boozy, prop(open(SOL.instId), 0.9, 3), "ok", { sizeMult: 0.25 });
-    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(166.5, 5);
+    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(166.5 * MARGIN_HEADROOM, 5);
   });
 
   it("double-down is capped at the room left under max", () => {
     const b = bee("boozy", { position: position(SOL, { contracts: 500 }), flatSince: null }); // 500 contracts x $1 = $500
     const r = run(ctx("boozy", b, V), boozy, prop({ kind: "add", sizeFrac: 1 }));
-    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(166, 5);
+    expect((r.action as { notionalUsd: number }).notionalUsd).toBeCloseTo(666 * MARGIN_HEADROOM - 500, 5);
   });
 
   it("vetoes an order below the instrument minimum", () => {

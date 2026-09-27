@@ -16,9 +16,15 @@ export function minutesSince(ts: number | null, now: number): number {
   return ts === null ? 0 : Math.max(0, (now - ts) / 60_000);
 }
 
-/** Max notional before the live ramp: min(MAX_LEVERAGE x equity, MAX_NOTIONAL_USD_PER_BEE). */
+/**
+ * Share of full leverage an order may use. At exactly MAX_LEVERAGE x equity, isolated margin needs every cent of the
+ * balance plus the fee, and OKX rejects it (51008 insufficient margin: bizzy's 2x breakout, 27 Sep 02:06Z).
+ */
+export const MARGIN_HEADROOM = 0.97;
+
+/** Max notional before the live ramp: min(MAX_LEVERAGE x equity x MARGIN_HEADROOM, MAX_NOTIONAL_USD_PER_BEE). */
 export function maxNotionalUsd(ctx: BeeContext): number {
-  return Math.max(0, Math.min(ctx.cfg.risk.maxLeverage * ctx.bee.equityUsd, ctx.cfg.risk.maxNotionalUsdPerBee));
+  return Math.max(0, Math.min(ctx.cfg.risk.maxLeverage * ctx.bee.equityUsd * MARGIN_HEADROOM, ctx.cfg.risk.maxNotionalUsdPerBee));
 }
 
 /** ATR-multiple stop from the 15m ATR%. */
