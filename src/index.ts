@@ -53,7 +53,7 @@ async function main() {
   const held = () => (engine ? positionList(engine.agent).map((p) => p.instId) : []);
   const feed = new MarketFeed(
     api,
-    { min24hVolUsd: cfg.universe.min24hVolUsd, allowNonCrypto: cfg.universe.allowNonCrypto, spreadGateBps: cfg.risk.spreadGateBps, trendCoins: cfg.strategy.trendCoins },
+    { min24hVolUsd: cfg.universe.min24hVolUsd, allowNonCrypto: cfg.universe.allowNonCrypto, spreadGateBps: cfg.risk.spreadGateBps, watchCoins: cfg.strategy.watchCoins },
     null,
     held,
   );

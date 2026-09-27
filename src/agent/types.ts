@@ -4,7 +4,7 @@ import type { CoinStats, MarketView } from "../market/types.js";
 export type Side = "long" | "short";
 
 /** Which lens of the strategy opened the position; it decides the stop and trailing logic that manages it. */
-export type Lens = "breakout" | "trend" | "momentum";
+export type Lens = "ict" | "vprofile";
 
 export interface Position {
   instId: string;
@@ -28,8 +28,10 @@ export interface Position {
   realisedUsd: number;
   /** Contracts ever bought into this position (for the trade record's size). */
   maxContracts: number;
-  /** trend lens: ensemble score at entry, for TRIM. */
-  entryScore?: number;
+  /** Which setup of the lens opened it (ict: sweep_fvg / ob_retest; vprofile: rotation / acceptance). */
+  setup?: string;
+  /** Price target the setup was aiming at (vprofile: POC or the far value-area edge), for TAKE_PROFIT. */
+  targetPx?: number | null;
 }
 
 export type CapReason = "loss_stop" | "retired" | "trade_cap" | "fee_budget";
@@ -55,25 +57,29 @@ export interface AgentState {
   totals: { feesUsd: number; fundingUsd: number; jevUsd: number; realisedUsd: number; decisions: number; orders: number };
   /** Closed round trips, for the edge estimate that scales position size. */
   record: { wins: number; losses: number; grossWinUsd: number; grossLossUsd: number };
-  /** momentum lens: who was #1 on the previous hourly rank, and for how many ranks in a row. */
-  top1: { coin: string | null; streak: number; rankedAt: number };
 }
 
 /** What a menu option means, in code. The risk layer turns this into a final action. */
+/** Setup details carried from the menu onto the opened position. */
+export interface EntryMeta {
+  setup: string;
+  targetPx: number | null;
+}
+
 export type Intent =
   | { kind: "hold" }
-  | { kind: "open"; instId: string; side: Side; lens: Lens; sizeFrac: number; setup: "strict" | "loose" }
+  | { kind: "open"; instId: string; side: Side; lens: Lens; sizeFrac: number; setup: "strict" | "loose"; meta?: EntryMeta }
   | { kind: "close"; instId: string; reason: string }
-  | { kind: "flip"; instId: string; side: Side; lens: Lens; sizeFrac: number }
+  | { kind: "flip"; instId: string; side: Side; lens: Lens; sizeFrac: number; meta?: EntryMeta }
   | { kind: "add"; instId: string; sizeFrac: number }
   | { kind: "trim"; instId: string; fraction: number };
 
 /** What the risk layer lets through to execution. Sizes are resolved to USD notional. */
 export type Action =
   | { kind: "none" }
-  | { kind: "open"; instId: string; side: Side; lens: Lens; notionalUsd: number }
+  | { kind: "open"; instId: string; side: Side; lens: Lens; notionalUsd: number; meta?: EntryMeta }
   | { kind: "close"; instId: string; reason: string }
-  | { kind: "flip"; instId: string; side: Side; lens: Lens; notionalUsd: number }
+  | { kind: "flip"; instId: string; side: Side; lens: Lens; notionalUsd: number; meta?: EntryMeta }
   | { kind: "add"; instId: string; notionalUsd: number }
   | { kind: "trim"; instId: string; fraction: number };
 

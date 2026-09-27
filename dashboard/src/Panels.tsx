@@ -1,5 +1,5 @@
 // Analytics panels: stat grid, daily P&L bars, breakdown tables, open positions, trade log.
-import { duration, money, pct, px, ratio, reason, signed, tone, when } from "./format";
+import { duration, lens, money, pct, px, ratio, reason, signed, tone, when } from "./format";
 import type { Analytics, Breakdown, PublicAgent, PublicPosition, Trade } from "./types";
 
 export function Card({ title, right, children, className = "" }: { title: string; right?: React.ReactNode; children: React.ReactNode; className?: string }) {
@@ -89,7 +89,7 @@ export function BreakdownTable({ title, rows, keyLabel }: { title: string; rows:
           <tbody>
             {sorted.map((r) => (
               <tr key={r.key}>
-                <td className="k">{reason(r.key)}</td>
+                <td className="k">{keyLabel === "lens" ? lens(r.key) : reason(r.key)}</td>
                 <td className="r num">{r.trades}</td>
                 <td className="r num">{r.winRate === null ? "–" : `${r.winRate.toFixed(0)}%`}</td>
                 <td className={`r num ${tone(r.pnlUsd)}`}>{signed(r.pnlUsd)}</td>
@@ -109,7 +109,7 @@ function PositionRow({ p }: { p: PublicPosition }) {
   return (
     <tr>
       <td className="k">
-        <span className={`side ${p.side}`}>{p.side === "long" ? "▲ LONG" : "▼ SHORT"}</span> <span className="pos-coin">{p.coin}</span> <span className="dim">{p.lens}</span>
+        <span className={`side ${p.side}`}>{p.side === "long" ? "▲ LONG" : "▼ SHORT"}</span> <span className="pos-coin">{p.coin}</span> <span className="dim">{lens(p.lens)}</span>
       </td>
       <td className="r num">{money(p.sizeUsd, 0)}</td>
       <td className="r num">{px(p.entryPx)}</td>
@@ -178,7 +178,7 @@ export function Trades({ trades }: { trades: Trade[] }) {
               <tr key={t.id}>
                 <td className="num dim">{when(t.closedTs)}</td>
                 <td className="k">
-                  <span className={`side ${t.side}`}>{t.side === "long" ? "▲" : "▼"}</span> <span className="pos-coin">{t.coin}</span> <span className="dim">{t.lens}</span>
+                  <span className={`side ${t.side}`}>{t.side === "long" ? "▲" : "▼"}</span> <span className="pos-coin">{t.coin}</span> <span className="dim">{lens(t.lens)}</span>
                 </td>
                 <td className="r num">{t.notionalUsd ? money(t.notionalUsd, 0) : "–"}</td>
                 <td className="r num">{t.entryPx ? `${px(t.entryPx)} → ${px(t.exitPx)}` : "–"}</td>

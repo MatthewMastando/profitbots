@@ -91,11 +91,10 @@ const EnvSchema = z.object({
   LIVE_SIZE_MULTIPLIER: num(0.25),
   LIVE_RAMP_HOURS: num(2),
   MIN_24H_VOL_USD: num(1_000_000),
-  ALLOW_NON_CRYPTO: bool(false),
+  ALLOW_NON_CRYPTO: bool(true),
   TAKER_FEE_RATE: num(0.0005),
-  TREND_COINS: list(["BTC", "ETH"]),
-  BREAKOUT_COINS: list(["BTC", "ETH", "SOL", "XRP"]),
-  MOMENTUM_CANDIDATES: num(5),
+  WATCH_COINS: list(["BTC", "ETH"]),
+  MAX_MENU_SETUPS: num(8),
   // Real money needs DRY_RUN=false, MODE=live AND this set to LIVE_ACK_PHRASE.
   LIVE_ACK: opt,
 
@@ -148,7 +147,7 @@ export interface Config {
     takerFeeRate: number;
   };
   universe: { min24hVolUsd: number; allowNonCrypto: boolean };
-  strategy: { trendCoins: string[]; breakoutCoins: string[]; momentumCandidates: number };
+  strategy: { watchCoins: string[]; maxMenuSetups: number };
   server: { port: number; bind: string };
   dbPath: string;
   logLevel: "debug" | "info" | "warn" | "error";
@@ -217,7 +216,7 @@ export function loadConfig(env: NodeJS.ProcessEnv = process.env): Config {
       takerFeeRate: e.TAKER_FEE_RATE,
     },
     universe: { min24hVolUsd: e.MIN_24H_VOL_USD, allowNonCrypto: e.ALLOW_NON_CRYPTO },
-    strategy: { trendCoins: e.TREND_COINS, breakoutCoins: e.BREAKOUT_COINS, momentumCandidates: Math.max(1, Math.floor(e.MOMENTUM_CANDIDATES)) },
+    strategy: { watchCoins: e.WATCH_COINS, maxMenuSetups: Math.max(1, Math.floor(e.MAX_MENU_SETUPS)) },
     server: { port: e.ENGINE_PORT, bind: e.ENGINE_BIND },
     dbPath: e.DB_PATH.replaceAll("{mode}", mode),
     logLevel: e.LOG_LEVEL,

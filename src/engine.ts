@@ -1,6 +1,6 @@
 import { brain as defaultBrain } from "./agent/brain.js";
 import { grossNotionalUsd, maxTotalNotionalUsd, minutesSince, positionNotional, profitLockStop, r2, uplUsd } from "./agent/common.js";
-import { coinOf, positionList, type Action, type AgentContext, type AgentState, type Brain, type Lens, type Position, type Side } from "./agent/types.js";
+import { coinOf, positionList, type Action, type AgentContext, type AgentState, type Brain, type EntryMeta, type Lens, type Position, type Side } from "./agent/types.js";
 import type { Config } from "./config.js";
 import type { Alerts } from "./alerts.js";
 import type { Db } from "./db.js";
@@ -163,7 +163,6 @@ export class Engine {
     this.refreshing = true;
     try {
       await this.d.feed.refresh(this.now());
-      this.rankMomentumHourly();
       if (this.venue) await this.pollFunding();
     } catch (err) {
       log.warn("market refresh failed", { err: safeError(err) });
@@ -251,7 +250,6 @@ export class Engine {
     const ctx = this.ctx(now);
     const menu = brain.menu(ctx);
     const snap = buildSnapshot(brain, ctx);
-    if (a.top1.coin) snap.state.top1 = `${a.top1.coin} x${a.top1.streak}`;
 
     let jevStatus: JevStatus = "ok";
     let r: JevResult | null = null;
@@ -409,7 +407,7 @@ export class Engine {
     const decisionId = this.d.db.insertDecision({
       ...EMPTY_DECISION, ts: now, action: { kind: "open", instId: last.instId, side }, forcedBy: "resume_last", status: "benched: back into the last position to ride it",
     });
-    const ok = await this.order(decisionId, last.instId, last.side, last.contracts, false, "resume_last", "trend");
+    const ok = await this.order(decisionId, last.instId, last.side, last.contracts, false, "resume_last", "ict");
     if (ok) this.armStops(last.instId);
     this.d.db.saveAgent(a, now);
   }
@@ -486,16 +484,16 @@ export class Engine {
           const ok = await this.order(decisionId, p.instId, p.side === "long" ? "sell" : "buy", p.contracts, true, "flip_close", p.lens);
           if (!ok) return;
         }
-        await this.openPosition(decisionId, action.instId, action.side, action.lens, action.notionalUsd);
+        await this.openPosition(decisionId, action.instId, action.side, action.lens, action.notionalUsd, action.meta);
         return;
       }
       case "open":
-        await this.openPosition(decisionId, action.instId, action.side, action.lens, action.notionalUsd);
+        await this.openPosition(decisionId, action.instId, action.side, action.lens, action.notionalUsd, action.meta);
         return;
     }
   }
 
-  private async openPosition(decisionId: number, instId: string, side: Side, lens: Lens, notionalUsd: number): Promise<void> {
+  private async openPosition(decisionId: number, instId: string, side: Side, lens: Lens, notionalUsd: number, meta?: EntryMeta): Promise<void> {
     const view = this.d.feed.view();
     const inst = view.instruments.get(instId);
     const s = view.stats.get(instId);
@@ -508,22 +506,24 @@ export class Engine {
     const ok = await this.order(decisionId, instId, side === "long" ? "buy" : "sell", contracts, false, "open", lens);
     if (!ok) return;
     this.agent.tradesToday++;
-    this.armStops(instId);
+    this.armStops(instId, meta);
   }
 
-  /** After an entry: the code-set stop, 1R and (trend) the entry score. */
-  private armStops(instId: string): void {
+  /** After an entry: the code-set stop and 1R. */
+  private armStops(instId: string, meta?: EntryMeta): void {
     const p = this.agent.positions[instId];
     const view = this.d.feed.view();
     const inst = view.instruments.get(instId);
-    const s = view.stats.get(instId);
     if (!p || !inst) return;
+    if (meta) {
+      p.setup = meta.setup;
+      p.targetPx = meta.targetPx;
+    }
     const ctx = this.ctx(this.now());
     p.stopPx = this.brain.stopFor(instId, p.side, p.lens, p.entryPx, ctx);
     p.initialStopPx = p.stopPx;
     const notional = positionNotional(p, p.entryPx, inst.ctVal);
     p.riskUsd = p.stopPx !== null ? sizedRiskUsd(p.contracts, inst.ctVal, p.entryPx, p.stopPx) : notional * 0.01;
-    if (s?.trend) p.entryScore = s.trend.score;
   }
 
   /** Record the order, send it, apply the fill. Returns true when it filled. */
@@ -648,7 +648,7 @@ export class Engine {
         instId,
         coin: inst?.coin ?? coinOf(instId),
         side,
-        lens: ours?.lens ?? "trend",
+        lens: ours?.lens ?? "ict",
         contracts: Math.abs(t.pos),
         entryPx: t.avgPx,
         openedAt: sameSide && ours ? ours.openedAt : now,
@@ -689,17 +689,6 @@ export class Engine {
     this.recon = { ok, detail, ts: now };
     this.d.bus.emit("recon", { ok, detail }, now);
     if (!ok && was !== false) this.d.alerts.send(`reconciliation mismatch: ${detail}`);
-  }
-
-  /** Momentum lens: who is #1 on the hourly rank, and for how many ranks in a row. */
-  private rankMomentumHourly() {
-    const now = this.now();
-    const a = this.agent;
-    if (Math.floor(now / 3_600_000) === Math.floor(a.top1.rankedAt / 3_600_000)) return;
-    const top = this.brain.snapshotCoins(this.ctx(now))[0];
-    if (!top) return;
-    const coin = this.d.feed.view().instruments.get(top)?.coin ?? coinOf(top);
-    a.top1 = { coin, streak: coin === a.top1.coin ? a.top1.streak + 1 : 1, rankedAt: now };
   }
 
   private checkJevOutage(now: number) {

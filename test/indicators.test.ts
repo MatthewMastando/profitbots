@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { atr, bollinger, donchianEnsemble, ema, macd, rsi, zScore } from "../src/market/indicators.js";
+import { atr, bollinger, ema, macd, rsi, zScore } from "../src/market/indicators.js";
 import type { Candle } from "../src/market/types.js";
 
 const candles = (closes: number[]): Candle[] => closes.map((c, i) => ({ ts: i, o: c, h: c * 1.01, l: c * 0.99, c, volUsd: 1000, confirmed: true }));
@@ -49,30 +49,5 @@ describe("indicators", () => {
     expect(zScore(10, [1, 2, 3, 4, 5])!).toBeGreaterThan(3);
     expect(zScore(3, [1, 2, 3, 4, 5])).toBe(0);
     expect(zScore(3, [1, 2])).toBeNull();
-  });
-});
-
-describe("ensemble Donchian", () => {
-  it("scores +N on a clean uptrend, -N on a downtrend", () => {
-    const up = Array.from({ length: 400 }, (_, i) => 100 + i);
-    const d = donchianEnsemble(up);
-    expect(d.slicesAvailable).toBe(9);
-    expect(d.score).toBe(9);
-    expect(d.trailStop).not.toBeNull();
-    expect(d.trailStop!).toBeLessThan(up.at(-1)!);
-    expect(donchianEnsemble([...up].reverse()).score).toBe(-9);
-  });
-
-  it("only counts slices that have enough history", () => {
-    const d = donchianEnsemble(Array.from({ length: 100 }, (_, i) => 100 + i));
-    expect(d.slicesAvailable).toBe(6); // 5,10,20,30,60,90
-    expect(d.score).toBe(6);
-  });
-
-  it("a sharp reversal turns short slices on and fast long slices off", () => {
-    const xs = [...Array.from({ length: 200 }, (_, i) => 100 + i), ...Array.from({ length: 15 }, (_, i) => 299 - i * 8)];
-    const d = donchianEnsemble(xs);
-    expect(d.shortOn).toBeGreaterThan(0);
-    expect(d.score).toBeLessThan(6);
   });
 });

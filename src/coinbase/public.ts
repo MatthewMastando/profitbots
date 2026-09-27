@@ -31,6 +31,8 @@ export interface CbProduct {
     contract_expiry?: string;
     contract_size?: string;
     contract_root_unit?: string;
+    contract_display_name?: string;
+    group_description?: string;
     contract_expiry_type?: string;
     perpetual_details?: { open_interest?: string; funding_rate?: string; funding_time?: string; max_leverage?: string } | null;
   };
@@ -52,8 +54,10 @@ export interface CbCandle {
 }
 
 const TEN_YEARS_MS = 10 * 365 * 86_400_000;
-const COMMODITY_WORDS = /\b(GOLD|SILVER|COPPER|OIL|CRUDE|NAT ?GAS|XAU|XAG)\b/i;
-const EQUITY_WORDS = /\b(MAG ?7|SPX|S&P|NASDAQ|NDX|DOW|RUSSELL|EQUIT)/i;
+const COMMODITY_WORDS = /\b(GOLD|GLD|SILVER|SLV|COPPER|OIL|CRUDE|NAT ?GAS|XAU|XAG)\b/i;
+const EQUITY_WORDS = /\b(MAG ?7|SPX|S&P|US ?500|US5|NASDAQ|NDX|DOW|RUSSELL|EQUIT)/i;
+/** Non-crypto roots come prefixed with the venue: CDEGLD, CDEOIL, CDEMC, CDEUS5. */
+const ROOT_PREFIX = /^CDE(?=[A-Z0-9]{2,})/;
 
 /** Perpetual-style: Coinbase lists its perps as EXPIRING with a far-future expiry and a perpetual_details block. */
 export function isPerpetual(p: CbProduct, now = Date.now()): boolean {
@@ -67,17 +71,19 @@ export function isPerpetual(p: CbProduct, now = Date.now()): boolean {
 /** Coin symbol: the contract's root unit, else the product id's first segment. */
 export function coinOfProduct(p: CbProduct): string {
   const root = p.future_product_details?.contract_root_unit?.trim();
-  if (root) return root.toUpperCase();
+  if (root) return root.toUpperCase().replace(ROOT_PREFIX, "");
   const disp = p.display_name?.split(/\s+/)[0]?.trim();
   if (disp) return disp.toUpperCase();
   return p.product_id.split("-")[0]!.toUpperCase();
 }
 
 function kindOfProduct(p: CbProduct, coin: string): Kind {
-  const name = `${p.display_name ?? ""} ${coin}`;
+  const f = p.future_product_details;
+  const name = `${p.display_name ?? ""} ${f?.group_description ?? ""} ${coin}`;
+  const k = kindOf(coin);
+  if (k === "crypto") return k;
   if (COMMODITY_WORDS.test(name)) return "commodity";
   if (EQUITY_WORDS.test(name)) return "stock";
-  const k = kindOf(coin);
   // Every Coinbase Derivatives perpetual-style contract is a crypto (or crypto index) product.
   return k === "unknown" && isPerpetual(p) ? "crypto" : k;
 }

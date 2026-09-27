@@ -177,6 +177,14 @@ describe("coinbase products", () => {
   it("commodity and equity index contracts are tagged non-crypto", () => {
     expect(parseProduct(perp("GLD-27MAR26-CDE", "GLD", { display_name: "Gold futures", future_product_details: { contract_size: "1", contract_root_unit: "GOLD", venue: "CDE" } })).kind).not.toBe("crypto");
     expect(parseProduct(perp("MAG7-PERP-INTX", "MAG7", { display_name: "MAG 7 index" })).kind).not.toBe("crypto");
+    const gol = parseProduct(perp("GOL-25NOV26-CDE", "GLD", { display_name: "GLD 25 NOV 26", future_product_details: { contract_size: "1", contract_root_unit: "CDEGLD", group_description: "Gold Futures", contract_expiry: "2026-11-25T00:00:00Z", venue: "CDE" } }));
+    expect(gol).toMatchObject({ coin: "GLD", kind: "commodity" });
+    const oil = parseProduct(perp("NOL-19OCT26-CDE", "OIL", { display_name: "OIL 19 OCT 26", future_product_details: { contract_size: "1", contract_root_unit: "CDEOIL", group_description: "nano Crude Oil Futures", contract_expiry: "2026-10-19T00:00:00Z", venue: "CDE" } }));
+    expect(oil).toMatchObject({ coin: "OIL", kind: "commodity" });
+    const us5 = parseProduct(perp("US5-19DEC30-CDE", "US5", { display_name: "US 500 PERP", future_product_details: { contract_size: "1", contract_root_unit: "CDEUS5", group_description: "US500 Index Perp Style Futures", contract_expiry: "2030-12-19T00:00:00Z", venue: "CDE" } }));
+    expect(us5).toMatchObject({ coin: "US5", kind: "stock" });
+    const mc = parseProduct(perp("MC-17DEC26-CDE", "MAG7C", { display_name: "MAG7C 17 DEC 26", future_product_details: { contract_size: "1", contract_root_unit: "CDEMC", group_description: "Mag7+Crypto Futures", contract_expiry: "2026-12-17T00:00:00Z", venue: "CDE" } }));
+    expect(mc).toMatchObject({ coin: "MC", kind: "stock" });
   });
 
   it("ticker: mid from bid/ask when quoted, spread in bps, quote volume, open from 24h change", () => {

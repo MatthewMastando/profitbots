@@ -19,7 +19,6 @@ export function freshAgent(equityUsd: number, now: number): AgentState {
     cap: null,
     totals: { feesUsd: 0, fundingUsd: 0, jevUsd: 0, realisedUsd: 0, decisions: 0, orders: 0 },
     record: { wins: 0, losses: 0, grossWinUsd: 0, grossLossUsd: 0 },
-    top1: { coin: null, streak: 0, rankedAt: 0 },
   };
 }
 

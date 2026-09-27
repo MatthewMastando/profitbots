@@ -17,7 +17,7 @@ export function applyProfile(p: Profile): void {
 }
 
 export type Side = "long" | "short";
-export type Lens = "breakout" | "trend" | "momentum";
+export type Lens = "ict" | "vprofile";
 
 export interface PublicPosition {
   instId: string;

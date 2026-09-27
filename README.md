@@ -20,7 +20,7 @@ For a US resident who wants leverage and the widest range of tradable assets fro
   **10x intraday leverage**. Offshore venues (OKX global, Bybit, Hyperliquid…) are not open to US residents.
 - **Widest leveraged menu in the US.** ~100 futures products on one API: perpetual-style contracts on BTC, ETH,
   SOL, XRP, DOGE, HYPE, BNB, AAVE, SUI, PEPE, SHIB, ZEC, PAXG and sector indices, plus dated gold, silver, copper, oil
-  and equity-index futures (`ALLOW_NON_CRYPTO=true`). Kraken Derivatives US has ~16 perps and no public trading API for
+  and equity-index futures (all on by default; `ALLOW_NON_CRYPTO=false` for crypto only). Kraken Derivatives US has ~16 perps and no public trading API for
   them; Kalshi has ~13 at lower leverage.
 - **One API for data and trading.** Public market data needs no key; live trading uses one CDP API key with JWT auth.
 
@@ -29,7 +29,7 @@ positions, fees), both in `src/coinbase/` + `src/exec/`. Swapping venues again m
 
 ## How the agent trades
 
-Three **lenses** (breakout, trend, momentum) generate ideas across the liquid universe. Each tick they are merged into
+Two **lenses** (ICT and volume/market profile) scan every liquid market, crypto or not. Each tick they are merged into
 one Jev menu: opens, and for each open position hold / close / add / trim / flip. Jev picks one with a probability
 distribution and conviction; code then sizes it, or vetoes it, and executes. The agent may hold **any number of
 positions** at once, capped by gross notional (`MAX_TOTAL_NOTIONAL_USD`, equity × `MAX_LEVERAGE`) and by a
@@ -37,7 +37,8 @@ per-position fraction. Details in [`strategies/AGENT.md`](strategies/AGENT.md).
 
 Every tick:
 
-1. **Look.** Coinbase market data: tickers, candles, RSI, MACD, ATR, Bollinger, Donchian, funding, open interest.
+1. **Look.** Coinbase market data: tickers, 15m/1h candles, RSI, MACD, ATR, Bollinger, funding, open interest; from the
+   candles, ICT structure (bias, sweeps, displacement, FVGs, order blocks) and the volume profile (POC, VAH/VAL).
 2. **Summarise.** A numeric snapshot of the market and every open position.
 3. **Ask Jev.** One `choice` + `score` call over the moves that are valid right now.
 4. **Check.** Plain code sizes from realised edge (Kelly-lite), enforces leverage and notional caps, stops, profit
