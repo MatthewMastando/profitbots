@@ -13,6 +13,9 @@ export interface CbProduct {
   display_name?: string;
   status?: string;
   trading_disabled?: boolean;
+  is_disabled?: boolean;
+  view_only?: boolean;
+  fcm_trading_session_details?: { is_session_open?: boolean; session_state?: string } | null;
   price?: string;
   price_percentage_change_24h?: string;
   volume_24h?: string;
@@ -79,10 +82,23 @@ function kindOfProduct(p: CbProduct, coin: string): Kind {
   return k === "unknown" && isPerpetual(p) ? "crypto" : k;
 }
 
+/**
+ * Tradable right now. Futures rows come back with an empty `status`; the flags and the FCM session are what count.
+ * A row that says `status: "online"` is live too (spot-style payloads).
+ */
+export function isTradable(p: CbProduct): boolean {
+  if (p.trading_disabled || p.is_disabled || p.view_only) return false;
+  const status = (p.status ?? "").toLowerCase();
+  if (status && status !== "online") return false;
+  const s = p.fcm_trading_session_details;
+  if (s && (s.is_session_open === false || (s.session_state && s.session_state !== "FCM_TRADING_SESSION_STATE_OPEN"))) return false;
+  return true;
+}
+
 export function parseProduct(p: CbProduct): Instrument {
   const coin = coinOfProduct(p);
   const f = p.future_product_details;
-  const live = (p.status ?? "").toLowerCase() === "online" && !p.trading_disabled;
+  const live = isTradable(p);
   const perpetual = isPerpetual(p);
   return {
     instId: p.product_id,
@@ -92,7 +108,7 @@ export function parseProduct(p: CbProduct): Instrument {
     lotSz: num(p.base_increment) || 1,
     minSz: num(p.base_min_size) || num(p.base_increment) || 1,
     tickSz: num(p.quote_increment) || 0.01,
-    state: live ? "live" : (p.status ?? "unknown").toLowerCase(),
+    state: live ? "live" : (p.status || p.fcm_trading_session_details?.session_state || "suspended").toLowerCase(),
     perpetual,
     expiry: !perpetual && f?.contract_expiry ? Date.parse(f.contract_expiry) || null : null,
   };
@@ -153,7 +169,7 @@ export function createCoinbasePublic(rest: CoinbaseRest, opts: PublicOpts): Publ
   /** The products we quote: live, perpetual (or any live contract when non-crypto is allowed), most traded first. */
   function quoted(ps: CbProduct[]): CbProduct[] {
     return ps
-      .filter((p) => (p.status ?? "").toLowerCase() === "online" && !p.trading_disabled)
+      .filter(isTradable)
       .filter((p) => isPerpetual(p, now()) || opts.allowNonCrypto)
       .sort((a, b) => (num(b.approximate_quote_24h_volume) || 0) - (num(a.approximate_quote_24h_volume) || 0))
       .slice(0, MAX_QUOTED);

@@ -2,7 +2,7 @@
 import { createVerify, generateKeyPairSync, verify as edVerify } from "node:crypto";
 import { describe, expect, it } from "vitest";
 import { buildJwt, decodeJwt, loadKey } from "../src/coinbase/auth.js";
-import { createCoinbasePublic, isPerpetual, parseCandles, parseProduct, parseTicker, type CbProduct } from "../src/coinbase/public.js";
+import { createCoinbasePublic, isPerpetual, parseCandles, isTradable, parseProduct, parseTicker, type CbProduct } from "../src/coinbase/public.js";
 import { CoinbaseError, createCoinbaseRest, qs } from "../src/coinbase/rest.js";
 import { CoinbaseExecutor } from "../src/exec/executor.js";
 import { NOW } from "./fixtures.js";
@@ -152,6 +152,16 @@ describe("coinbase products", () => {
 
   it("maps a perp to an Instrument with contract size, lot, min size and tick", () => {
     expect(parseProduct(perp("SOL-PERP-INTX", "SOL"))).toEqual({ instId: "SOL-PERP-INTX", coin: "SOL", kind: "crypto", ctVal: 0.1, lotSz: 1, minSz: 1, tickSz: 0.01, state: "live", perpetual: true, expiry: null });
+  });
+
+  it("real futures rows have an empty status: tradability comes from the flags and the FCM session", () => {
+    const real = perp("BIP-20DEC30-CDE", "BTC", { status: "", is_disabled: false, view_only: false, fcm_trading_session_details: { is_session_open: true, session_state: "FCM_TRADING_SESSION_STATE_OPEN" } });
+    expect(isTradable(real)).toBe(true);
+    expect(parseProduct(real).state).toBe("live");
+    expect(isTradable({ ...real, fcm_trading_session_details: { is_session_open: false, session_state: "FCM_TRADING_SESSION_STATE_CLOSED" } })).toBe(false);
+    expect(isTradable({ ...real, view_only: true })).toBe(false);
+    expect(isTradable({ ...real, trading_disabled: true })).toBe(false);
+    expect(parseProduct({ ...real, status: "delisted" }).state).toBe("delisted");
   });
 
   it("commodity and equity index contracts are tagged non-crypto", () => {

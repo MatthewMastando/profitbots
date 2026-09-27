@@ -906,7 +906,23 @@ a.counter.host:hover {
     font-size: 14px;
   }
   .top {
+    grid-template-columns: 1fr;
+    gap: 0.75rem;
+    padding: 0 0.75rem;
+  }
+  .counters {
+    justify-content: flex-start;
+  }
+  .counter {
+    min-width: 0;
+    flex: 1 1 8rem;
+  }
+  .top-right {
     flex-wrap: wrap;
+    justify-content: flex-start;
+  }
+  .windows button {
+    padding: 0.3rem 0.5rem;
   }
   .row2,
   .row4,
