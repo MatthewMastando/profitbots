@@ -918,8 +918,7 @@ a.counter.host:hover {
     flex: 1 1 8rem;
   }
   .top-right {
-    flex-wrap: wrap;
-    justify-content: flex-start;
+    align-items: flex-start;
   }
   .windows button {
     padding: 0.3rem 0.5rem;
