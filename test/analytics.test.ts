@@ -7,15 +7,15 @@ import { startServer } from "../src/server.js";
 import { NOW } from "./fixtures.js";
 
 const DAY = 86_400_000;
-const trade = (over: Partial<TradeRow> & { closedTs: number }): TradeRow => ({ openedTs: over.closedTs - 3_600_000, instId: "SOL-PERP-INTX", coin: "SOL", side: "long", lens: "momentum", contracts: 10, entryPx: 100, exitPx: 101, notionalUsd: 1000, pnlUsd: 10, feeUsd: 0.5, reason: "jev_close", ...over });
+const trade = (over: Partial<TradeRow> & { closedTs: number }): TradeRow => ({ openedTs: over.closedTs - 3_600_000, instId: "SOL-PERP-INTX", coin: "SOL", side: "long", lens: "ict", contracts: 10, entryPx: 100, exitPx: 101, notionalUsd: 1000, pnlUsd: 10, feeUsd: 0.5, reason: "jev_close", ...over });
 
 function seeded(): Db {
   const db = new Db(":memory:");
   const eq = [1000, 1020, 990, 1050, 1030];
   eq.forEach((e, i) => db.insertEquity(NOW - (eq.length - 1 - i) * DAY, e, e, 0));
   db.insertTrade(trade({ pnlUsd: 20, closedTs: NOW - 4 * DAY + 1000 }));
-  db.insertTrade(trade({ pnlUsd: -30, coin: "ENA", instId: "ENA-PERP-INTX", side: "short", lens: "trend", reason: "stop", closedTs: NOW - 3 * DAY + 1000 }));
-  db.insertTrade(trade({ pnlUsd: 60, coin: "SOL", lens: "breakout", closedTs: NOW - 2 * DAY + 1000 }));
+  db.insertTrade(trade({ pnlUsd: -30, coin: "ENA", instId: "ENA-PERP-INTX", side: "short", lens: "vprofile", reason: "stop", closedTs: NOW - 3 * DAY + 1000 }));
+  db.insertTrade(trade({ pnlUsd: 60, coin: "SOL", lens: "ict", closedTs: NOW - 2 * DAY + 1000 }));
   db.insertTrade(trade({ pnlUsd: -20, coin: "BTC", instId: "BTC-PERP-INTX", side: "short", reason: "stop", closedTs: NOW - DAY + 1000 }));
   db.insertFunding(NOW - DAY, "SOL-PERP-INTX", -1.5, "f1");
   for (let i = 0; i < 3; i++) {
@@ -51,7 +51,7 @@ describe("computeAnalytics", () => {
     expect(a.trades.avgHoldMinutes).toBe(60);
     expect(a.byCoin.find((b) => b.key === "SOL")).toMatchObject({ trades: 2, pnlUsd: 80, winRate: 100 });
     expect(a.bySide.find((b) => b.key === "short")).toMatchObject({ trades: 2, pnlUsd: -50, winRate: 0 });
-    expect(a.byLens.map((b) => b.key).sort()).toEqual(["breakout", "momentum", "trend"]);
+    expect(a.byLens.map((b) => b.key).sort()).toEqual(["ict", "vprofile"]);
     expect(a.byReason.find((b) => b.key === "stop")?.trades).toBe(2);
     expect(a.costs).toMatchObject({ feesUsd: 0, fundingUsd: -1.5 });
     expect(a.costs.totalUsd).toBeCloseTo(1.5 + 0.03);

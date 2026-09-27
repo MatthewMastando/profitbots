@@ -133,9 +133,9 @@ function toAction(intent: Intent, notionalUsd?: number): Action {
     case "add":
       return { kind: "add", instId: intent.instId, notionalUsd: notionalUsd! };
     case "open":
-      return { kind: "open", instId: intent.instId, side: intent.side, lens: intent.lens, notionalUsd: notionalUsd! };
+      return { kind: "open", instId: intent.instId, side: intent.side, lens: intent.lens, notionalUsd: notionalUsd!, meta: intent.meta };
     case "flip":
-      return { kind: "flip", instId: intent.instId, side: intent.side, lens: intent.lens, notionalUsd: notionalUsd! };
+      return { kind: "flip", instId: intent.instId, side: intent.side, lens: intent.lens, notionalUsd: notionalUsd!, meta: intent.meta };
   }
 }
 

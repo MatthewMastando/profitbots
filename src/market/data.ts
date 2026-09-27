@@ -1,7 +1,9 @@
 import { log } from "../log.js";
 import type { PublicApi } from "./public-api.js";
 import { safeError } from "../redact.js";
-import { atr, bollinger, macd, pctChange, rsi, trendStats, zScore } from "./indicators.js";
+import { ictStats } from "./ict.js";
+import { atr, bollinger, macd, pctChange, rsi, zScore } from "./indicators.js";
+import { profileStats } from "./profile.js";
 import type { Candle, CoinStats, Instrument, MarketView, Ticker } from "./types.js";
 import { gateUniverse } from "./universe.js";
 
@@ -18,15 +20,14 @@ export type NewsSource = (coins: string[]) => Promise<Map<string, NewsReading> |
 export interface FeedOpts {
   min24hVolUsd: number;
   allowNonCrypto: boolean;
-  /** The widest spread gate of any bee (boozy's), used for the shared universe. */
   spreadGateBps: number;
-  /** Coins that always get stats + 4h trend data (breezy's majors). */
-  trendCoins: string[];
+  /** Coins that always get stats, even below the volume gate. */
+  watchCoins: string[];
 }
 
 const HOUR = 3_600_000;
 
-export function computeStats(inst: Instrument, t: Ticker, c15: Candle[], c1h: Candle[]): CoinStats {
+export function computeStats(inst: Instrument, t: Ticker, c15: Candle[], c1h: Candle[], now = Date.now()): CoinStats {
   const closes15 = c15.map((c) => c.c);
   const closes1h = c1h.map((c) => c.c);
   const last = t.last;
@@ -61,6 +62,8 @@ export function computeStats(inst: Instrument, t: Ticker, c15: Candle[], c1h: Ca
     oiChg1hPct: null,
     newsZ: null,
     sentiment: null,
+    ict: c15.length >= 30 && c1h.length >= 30 ? ictStats(c15, c1h, a, last, now) : null,
+    vp: profileStats(c15, c1h, last, now),
   };
 }
 
@@ -80,7 +83,7 @@ export class MarketFeed {
     private api: PublicApi,
     private opts: FeedOpts,
     private news: NewsSource | null,
-    /** Coins currently held by any bee: they keep getting stats even if they drop out of the gate. */
+    /** Coins currently held: they keep getting stats even if they drop out of the gate. */
     private heldInstIds: () => string[],
   ) {}
 
@@ -140,31 +143,27 @@ export class MarketFeed {
       this.oiHistory.set(id, h);
     }
 
-    const trendIds = this.opts.trendCoins.map((c) => this.instIdForCoin(c)).filter((x): x is string => !!x);
-    const want = [...new Set([...this.gated, ...trendIds, ...this.heldInstIds()])].filter((id) => this.instruments.has(id) && tickers.has(id));
+    const watchIds = this.opts.watchCoins.map((c) => this.instIdForCoin(c)).filter((x): x is string => !!x);
+    const want = [...new Set([...this.gated, ...watchIds, ...this.heldInstIds()])].filter((id) => this.instruments.has(id) && tickers.has(id));
 
     const next = new Map<string, CoinStats>();
     await Promise.all(
       want.map(async (id) => {
         const inst = this.instruments.get(id)!;
         try {
-          const isTrend = trendIds.includes(id);
-          const [c15, c1h, c4h, funding, fHist] = await Promise.all([
+          const [c15, c1h, funding, fHist] = await Promise.all([
             this.api.candles(id, "15m", 100),
             this.api.candles(id, "1H", 200),
-            isTrend ? this.api.candles(id, "4H", 300) : Promise.resolve(null),
             this.api.funding(id).catch(() => null),
             this.fundingHistory(id, now),
           ]);
-          const s = computeStats(inst, tickers.get(id)!, c15, c1h);
+          const s = computeStats(inst, tickers.get(id)!, c15, c1h, now);
           if (funding && Number.isFinite(funding.rate)) {
             s.fundingPct = funding.rate * 100;
             s.fundingZ = fHist.length ? zScore(funding.rate, fHist) : null;
           }
           s.oiUsd = oi.get(id) ?? null;
           s.oiChg1hPct = this.oiChange1h(id, now);
-          if (c4h) s.trend = trendStats(c4h);
-          s.breakout = breakoutLevels(c1h, now, BREAKOUT_K);
           next.set(id, s);
         } catch (err) {
           log.warn("market data failed for coin", { instId: id, err: safeError(err) });
@@ -212,20 +211,4 @@ export class MarketFeed {
       return c?.rates ?? [];
     }
   }
-}
-
-/** Larry Williams k: the trigger is today's open plus k x yesterday's high-low range (k = 0.5 in the source). */
-export const BREAKOUT_K = 0.5;
-
-/** Today's UTC-day open and yesterday's full range from 1h candles; null until a full previous day is available. */
-export function breakoutLevels(c1h: Candle[], now: number, k: number): { dayOpen: number; prevRange: number; trigger: number } | null {
-  const day = 86_400_000;
-  const t0 = Math.floor(now / day) * day;
-  const sorted = [...c1h].sort((a, b) => a.ts - b.ts);
-  const today = sorted.filter((c) => c.ts >= t0);
-  const prev = sorted.filter((c) => c.ts >= t0 - day && c.ts < t0);
-  if (!today.length || prev.length < 20) return null;
-  const dayOpen = today[0]!.o;
-  const prevRange = Math.max(...prev.map((c) => c.h)) - Math.min(...prev.map((c) => c.l));
-  return { dayOpen, prevRange, trigger: dayOpen + k * prevRange };
 }

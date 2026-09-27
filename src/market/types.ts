@@ -1,4 +1,6 @@
+import type { IctStats } from "./ict.js";
 import type { Kind } from "./kinds.js";
+import type { ProfileStats } from "./profile.js";
 
 export interface Instrument {
   instId: string;
@@ -73,24 +75,10 @@ export interface CoinStats {
   // news (kit news module; null when unavailable)
   newsZ: number | null;
   sentiment: number | null;
-  // 4h trend (breezy's coins only)
-  trend?: TrendStats;
-  /** Larry Williams volatility breakout (bizzy): today's UTC open + k x yesterday's range, from 1h bars. */
-  breakout?: { dayOpen: number; prevRange: number; trigger: number } | null;
-}
-
-export interface TrendStats {
-  /** Ensemble Donchian score, -9..+9 (long slices on minus short slices on). */
-  score: number;
-  longOn: number;
-  shortOn: number;
-  slicesAvailable: number;
-  atr4hPct: number | null;
-  rv90Pct: number | null;
-  /** Average trailing stop of the slices in the dominant direction, or null if none on. */
-  trailStop: number | null;
-  /** At a 10-day (60 x 4h) closing high (+1) or low (-1), else 0. */
-  tenDayExtreme: -1 | 0 | 1;
+  /** ICT structure: bias, sweep, displacement, FVG, order block, killzone (15m entries, 1h bias). */
+  ict: IctStats | null;
+  /** Volume profile: composite + previous-day POC / value area, acceptance outside value. */
+  vp: ProfileStats | null;
 }
 
 export interface MarketView {
@@ -98,9 +86,9 @@ export interface MarketView {
   instruments: Map<string, Instrument>;
   tickers: Map<string, Ticker>;
   stats: Map<string, CoinStats>;
-  /** Gated crypto universe (boozy's pool), ranked by 24h volume. */
+  /** Gated universe, ranked by 24h volume. */
   gated: string[];
-  /** Coins that passed volume but failed the spread gate (for "boozy wanted RAY" moments). */
+  /** Coins that passed volume but failed the spread gate. */
   spreadBlocked: string[];
   newsAvailable: boolean;
 }

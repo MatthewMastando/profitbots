@@ -1,7 +1,9 @@
 import type { AgentContext, AgentState, Position } from "../src/agent/types.js";
 import { loadConfig, type Config } from "../src/config.js";
 import { freshAgent } from "../src/ledger.js";
-import type { CoinStats, Instrument, MarketView, Ticker, TrendStats } from "../src/market/types.js";
+import type { IctStats } from "../src/market/ict.js";
+import type { Profile, ProfileStats } from "../src/market/profile.js";
+import type { CoinStats, Instrument, MarketView, Ticker } from "../src/market/types.js";
 
 export const NOW = Date.UTC(2026, 8, 24, 12, 0, 0);
 
@@ -37,12 +39,39 @@ export function coin(coinName: string, over: Partial<CoinStats> = {}, px = 100):
     oiChg1hPct: 0,
     newsZ: null,
     sentiment: null,
+    ict: null,
+    vp: null,
     ...over,
   };
 }
 
-export function trend(over: Partial<TrendStats> = {}): TrendStats {
-  return { score: 0, longOn: 0, shortOn: 0, slicesAvailable: 9, atr4hPct: 1.5, rv90Pct: 50, trailStop: null, tenDayExtreme: 0, ...over };
+/** A bullish ICT picture at price `px`: 1h bias up, lows swept, displacement, price sitting in the FVG. Pass dir -1 for the mirror. */
+export function ict(px: number, dir: 1 | -1 = 1, over: Partial<IctStats> = {}): IctStats {
+  const d = dir;
+  return {
+    bias: d,
+    sweep: { level: px * (1 - d * 0.01), kind: d === 1 ? "low" : "high", barsAgo: 6, extreme: px * (1 - d * 0.012) },
+    displacement: { dir: d, barsAgo: 3, atrMult: 2, broke: px * (1 + d * 0.005) },
+    fvg: d === 1 ? { lo: px * 0.998, hi: px * 1.002, dir: d, barsAgo: 3 } : { lo: px * 0.998, hi: px * 1.002, dir: d, barsAgo: 3 },
+    orderBlock: d === 1 ? { lo: px * 0.99, hi: px * 0.995, dir: d, barsAgo: 4 } : { lo: px * 1.005, hi: px * 1.01, dir: d, barsAgo: 4 },
+    pdh: px * 1.03,
+    pdl: px * 0.97,
+    killzone: "ny_am",
+    rangePos: d === 1 ? 0.3 : 0.7,
+    swingHigh: px * 1.015,
+    swingLow: px * 0.985,
+    ...over,
+  };
+}
+
+export function profile(poc: number, width: number, over: Partial<Profile> = {}): Profile {
+  return { poc, vah: poc + width / 2, val: poc - width / 2, step: width / 20, lvnAbove: poc + width, lvnBelow: poc - width, totalVolUsd: 1e8, bars: 120, ...over };
+}
+
+/** Volume profile with the composite POC at `poc`, `width` wide; `vaPos`/`acceptance` describe where `px` is. */
+export function vp(px: number, poc: number, width: number, over: Partial<ProfileStats> = {}): ProfileStats {
+  const composite = profile(poc, width);
+  return { composite, prevDay: null, vaPos: (px - composite.val) / width, acceptance: 0, openVsPrevVa: null, ...over };
 }
 
 export function instrument(s: CoinStats, over: Partial<Instrument> = {}): Instrument {
@@ -78,7 +107,7 @@ export function position(s: CoinStats, over: Partial<Position> = {}): Position {
     instId: s.instId,
     coin: s.coin,
     side: "long",
-    lens: "momentum",
+    lens: "ict",
     contracts: 100,
     entryPx: s.mid,
     openedAt: NOW - 10 * 60_000,

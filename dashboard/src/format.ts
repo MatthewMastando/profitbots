@@ -29,3 +29,6 @@ export const REASON: Record<string, string> = {
   wind_down: "wind-down",
 };
 export const reason = (r: string) => REASON[r] ?? r.replace(/_/g, " ");
+
+export const LENS: Record<string, string> = { ict: "ICT", vprofile: "volume profile" };
+export const lens = (l: string) => LENS[l] ?? l;

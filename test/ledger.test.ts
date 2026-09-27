@@ -11,7 +11,7 @@ const f = (instId: string, side: "buy" | "sell", contracts: number, px: number, 
   feeUsd: 0,
   ctVal: 0.01,
   ts: NOW,
-  lens: "momentum",
+  lens: "ict",
   ...over,
 });
 const ENA = "ENA-PERP-INTX";
@@ -21,7 +21,7 @@ describe("ledger: one book, many positions", () => {
   it("opens, marks and closes a long; fees come off cash", () => {
     const a = freshAgent(1000, NOW);
     applyFill(a, f(ENA, "buy", 100, 100, { feeUsd: 0.05 }));
-    expect(a.positions[ENA]).toMatchObject({ side: "long", contracts: 100, entryPx: 100, lens: "momentum", feesUsd: 0.05 });
+    expect(a.positions[ENA]).toMatchObject({ side: "long", contracts: 100, entryPx: 100, lens: "ict", feesUsd: 0.05 });
     expect(a.flatSince).toBeNull();
     const out = applyFill(a, f(ENA, "sell", 100, 102, { feeUsd: 0.051, ts: NOW + 60_000 }));
     expect(out.realisedUsd).toBeCloseTo(2, 10);
@@ -37,7 +37,7 @@ describe("ledger: one book, many positions", () => {
   it("holds two instruments independently; closing one leaves the other", () => {
     const a = freshAgent(1000, NOW);
     applyFill(a, f(ENA, "buy", 100, 100));
-    applyFill(a, f(SOL, "sell", 50, 100, { lens: "trend" }));
+    applyFill(a, f(SOL, "sell", 50, 100, { lens: "vprofile" }));
     expect(Object.keys(a.positions)).toHaveLength(2);
     expect(applyFill(a, f(SOL, "buy", 50, 90)).realisedUsd).toBeCloseTo(5, 10);
     expect(Object.keys(a.positions)).toEqual([ENA]);
@@ -64,9 +64,9 @@ describe("ledger: one book, many positions", () => {
   it("a fill through zero closes the old position and opens the reverse", () => {
     const a = freshAgent(1000, NOW);
     applyFill(a, f(ENA, "buy", 100, 100));
-    const out = applyFill(a, f(ENA, "sell", 150, 110, { lens: "trend" }));
+    const out = applyFill(a, f(ENA, "sell", 150, 110, { lens: "vprofile" }));
     expect(out.closed?.pnlUsd).toBeCloseTo(10, 10);
-    expect(a.positions[ENA]).toMatchObject({ side: "short", contracts: 50, entryPx: 110, lens: "trend" });
+    expect(a.positions[ENA]).toMatchObject({ side: "short", contracts: 50, entryPx: 110, lens: "vprofile" });
   });
 
   it("a losing round trip lands in the loss column net of fees", () => {

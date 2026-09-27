@@ -8,9 +8,9 @@ import { SimExecutor, type Executor } from "../src/exec/executor.js";
 import { Jev, type SystemOne } from "../src/jev.js";
 import type { MarketFeed } from "../src/market/data.js";
 import type { MarketView } from "../src/market/types.js";
-import { coin, NOW, position, testConfig, view } from "./fixtures.js";
+import { coin, ict, NOW, position, testConfig, view } from "./fixtures.js";
 
-const ENA = (px = 100) => coin("ENA", { ret24hPct: 25, ret7dPct: 43 }, px);
+const ENA = (px = 100) => coin("ENA", { ret24hPct: 25, ret7dPct: 43, ict: ict(100) }, px);
 const SUI = () => coin("SUI", { ret24hPct: 12, ret7dPct: 40 });
 const BTC = () => coin("BTC", { ret24hPct: 1, ret7dPct: 2 }, 80000);
 
@@ -57,19 +57,19 @@ async function harness(opts: { answer?: () => string; exec?: (v: () => MarketVie
 }
 
 describe("engine + Jev", () => {
-  it("asks Jev once per tick with the unified menu, and a MOMENTUM pick opens a sized long", async () => {
-    const h = await harness({ answer: () => "MOMENTUM_ENA" });
+  it("asks Jev once per tick with the unified menu, and an ICT pick opens a sized long", async () => {
+    const h = await harness({ answer: () => "ICT_LONG_ENA" });
     await h.engine.tick();
     expect(h.calls).toHaveLength(1);
     const req = JSON.parse(h.calls[0]!) as { questions: { action: { instructions: string; options: unknown } } };
     expect(req.questions.action.instructions).toMatch(/one trading agent/);
     const p = h.engine.agent.positions[h.enaId];
-    expect(p).toMatchObject({ side: "long", lens: "momentum", coin: "ENA" });
+    expect(p).toMatchObject({ side: "long", lens: "ict", coin: "ENA" });
     expect(p!.stopPx).not.toBeNull();
     expect(h.engine.agent.tradesToday).toBe(1);
     expect(h.db.trades(0, 10)).toHaveLength(0);
     const decision = h.events.find((e) => e.type === "decision");
-    expect(decision).toMatchObject({ choice: "MOMENTUM_ENA" });
+    expect(decision).toMatchObject({ choice: "ICT_LONG_ENA" });
   });
 
   it("a stop hit closes the position without asking Jev, and the round trip lands in the trade log", async () => {
@@ -131,7 +131,7 @@ describe("engine + Jev", () => {
       async fundingBills() { return null; },
       async feesFor() { return null; },
     });
-    const h = await harness({ answer: () => "MOMENTUM_ENA", exec });
+    const h = await harness({ answer: () => "ICT_LONG_ENA", exec });
     await h.engine.tick();
     expect(sent).toHaveLength(1);
     for (let i = 0; i < 20; i++) {
@@ -146,7 +146,7 @@ describe("engine + Jev", () => {
   });
 
   it("snapshot exposes one agent with its positions and the analytics totals", async () => {
-    const h = await harness({ answer: () => "MOMENTUM_ENA" });
+    const h = await harness({ answer: () => "ICT_LONG_ENA" });
     await h.engine.tick();
     const s = h.engine.snapshot();
     expect(s.agent.equityUsd).toBeGreaterThan(0);
