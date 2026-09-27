@@ -9,6 +9,10 @@ export interface Instrument {
   minSz: number;
   tickSz: number;
   state: string;
+  /** Perpetual-style contract (no practical expiry). */
+  perpetual: boolean;
+  /** Expiry (ms) for dated contracts, null for perpetuals / unknown. */
+  expiry: number | null;
 }
 
 export interface Ticker {

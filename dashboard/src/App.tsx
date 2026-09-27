@@ -1,34 +1,43 @@
 import { useEffect, useState } from "react";
-import { BeeColumn, money } from "./BeeColumn";
+import { EquityChart } from "./EquityChart";
 import { Header } from "./Header";
+import { BreakdownTable, Card, DailyBars, JevPanel, Positions, Stats, Trades } from "./Panels";
 import { unlockAudio } from "./sound";
 import { Ticker } from "./Ticker";
 import { Toasts } from "./Toasts";
-import { BEE_META, BEE_NAMES } from "./types";
-import { useFeed } from "./useFeed";
+import { PROFILE } from "./types";
+import { useFeed, type Window } from "./useFeed";
 
-function readSoundPref(): boolean {
+const WINDOW_LABEL: Record<Window, string> = { 1: "24h", 7: "7 days", 30: "30 days", 90: "90 days", 365: "1 year" };
+
+function readPref<T extends string>(key: string, fallback: T): T {
   try {
-    return localStorage.getItem("bees.sound") === "on";
+    return (localStorage.getItem(key) as T | null) ?? fallback;
   } catch {
-    return false;
+    return fallback;
+  }
+}
+function writePref(key: string, value: string) {
+  try {
+    localStorage.setItem(key, value);
+  } catch {
+    /* private mode: fine */
   }
 }
 
 export function App() {
   const [soundOn, setSoundOn] = useState(false);
-  const feed = useFeed(soundOn);
+  const [days, setDays] = useState<Window>(() => (Number(readPref("agent.window", "30")) as Window) || 30);
+  const feed = useFeed(soundOn, days);
   const [, force] = useState(0);
 
-  // Re-render every second so "ago" / flash windows expire even when the stream is quiet.
   useEffect(() => {
     const t = setInterval(() => force((x) => x + 1), 1000);
     return () => clearInterval(t);
   }, []);
 
-  // Sound needs a click before the browser allows audio: one click anywhere turns on a saved preference.
   useEffect(() => {
-    if (!readSoundPref()) return;
+    if (readPref<string>("agent.sound", "off") !== "on") return;
     const once = () => setSoundOn(unlockAudio());
     window.addEventListener("pointerdown", once, { once: true });
     return () => window.removeEventListener("pointerdown", once);
@@ -37,72 +46,59 @@ export function App() {
   const toggleSound = () => {
     const next = !soundOn && unlockAudio();
     setSoundOn(next);
-    try {
-      localStorage.setItem("bees.sound", next ? "on" : "off");
-    } catch {
-      /* private mode: fine */
-    }
+    writePref("agent.sound", next ? "on" : "off");
+  };
+  const pickDays = (d: Window) => {
+    setDays(d);
+    writePref("agent.window", String(d));
   };
 
-  const board = [...BEE_NAMES].sort((a, b) => (feed.bees[b]?.equityUsd ?? 0) - (feed.bees[a]?.equityUsd ?? 0));
-  const leaderEq = feed.bees[board[0]!]?.equityUsd ?? 0;
-  const baseline = feed.snap?.startEquityUsd ?? 333;
   const stalled = feed.lastEventAt > 0 && Date.now() - feed.lastEventAt > 15_000;
+  const baseline = feed.snap?.startEquityUsd ?? PROFILE.startEquityUsd;
   const blocked = feed.snap?.market.spreadBlocked ?? [];
+  const flash = feed.flash;
 
   return (
-    <div className="app">
-      <Header snap={feed.snap} connected={feed.connected} stalled={stalled} soundOn={soundOn} onSound={toggleSound} />
-      <main className="grid">
-        {BEE_NAMES.map((name) => {
-          const bee = feed.bees[name];
-          return (
-            <BeeColumn
-              key={name}
-              name={name}
-              bee={bee}
-              curve={feed.curves[name]}
-              baseline={baseline}
-              rank={board.indexOf(name) + 1}
-              gap={bee ? Math.max(0, leaderEq - bee.equityUsd) : null}
-              flash={feed.flashes[name]}
-            />
-          );
-        })}
-        <aside className="rail">
-          <section className="rail-card board">
-            <div className="rail-head">
-              <span className="eyebrow">Leaderboard</span>
-              <span className="dim">equity</span>
-            </div>
-            {board.map((name, i) => {
-              const b = feed.bees[name];
-              const width = b ? Math.max(4, (b.equityUsd / Math.max(leaderEq, 1)) * 100) : 0;
-              return (
-                <div className="board-row" key={name} style={{ ["--bee" as string]: BEE_META[name].color }}>
-                  <span className="board-rank num">{i + 1}</span>
-                  <img src={BEE_META[name].img} alt="" />
-                  <span className="board-name">{BEE_META[name].short}</span>
-                  <span className="board-bar">
-                    <span style={{ width: `${width}%` }} />
-                  </span>
-                  <span className="board-eq num">{b ? money(b.equityUsd) : "–"}</span>
-                </div>
-              );
-            })}
-          </section>
+    <div className={`app ${flash ? `flash-${flash.kind}` : ""}`}>
+      <Header snap={feed.snap} agent={feed.agent} connected={feed.connected} stalled={stalled} soundOn={soundOn} onSound={toggleSound} days={days} onDays={pickDays} />
+      <main className="layout">
+        <div className="col main-col">
+          <Card title={`Equity · ${WINDOW_LABEL[days]}`} right={flash ? flash.text : feed.agent?.last?.status} className="equity">
+            <EquityChart curve={feed.curve} color="var(--accent)" baseline={baseline} gradientId="eq" />
+          </Card>
+          <Positions a={feed.agent} />
+          <Stats a={feed.analytics} label={WINDOW_LABEL[days]} />
+          <div className="row2">
+            <DailyBars daily={feed.analytics?.daily ?? []} />
+            <JevPanel a={feed.analytics} />
+          </div>
+          <div className="row4">
+            <BreakdownTable title="By coin" keyLabel="coin" rows={feed.analytics?.byCoin ?? []} />
+            <BreakdownTable title="By side" keyLabel="side" rows={feed.analytics?.bySide ?? []} />
+            <BreakdownTable title="By lens" keyLabel="lens" rows={feed.analytics?.byLens ?? []} />
+            <BreakdownTable title="By exit" keyLabel="exit" rows={feed.analytics?.byReason ?? []} />
+          </div>
+          <Trades trades={feed.trades} />
+        </div>
+        <aside className="col rail">
           <Ticker decisions={feed.decisions} perMin={feed.decisionTimes.length} />
-          {blocked.length > 0 && (
-            <section className="rail-card blocked">
-              <span className="eyebrow">Spread gate says no</span>
-              <div className="blocked-list num">
-                {blocked.slice(0, 6).map((b) => (
-                  <span key={b.coin}>
-                    {b.coin} <span className="dim">{b.spreadBp}bp</span>
-                  </span>
+          {feed.snap && (
+            <Card title="Universe" right={`${feed.snap.market.universe.length} tradable`}>
+              <div className="chips num">
+                {feed.snap.market.universe.slice(0, 30).map((c) => (
+                  <span key={c}>{c}</span>
                 ))}
               </div>
-            </section>
+              {blocked.length > 0 && (
+                <div className="chips blocked num">
+                  {blocked.slice(0, 8).map((b, i) => (
+                    <span key={`${b.coin}-${i}`} title="spread gate">
+                      {b.coin} <span className="dim">{b.spreadBp === null ? "no quote" : `${b.spreadBp}bp`}</span>
+                    </span>
+                  ))}
+                </div>
+              )}
+            </Card>
           )}
         </aside>
       </main>

@@ -25,6 +25,7 @@ export function roundToLot(contracts: number, inst: Pick<Instrument, "lotSz">): 
   return Number((lots * inst.lotSz).toFixed(decimals(inst.lotSz)));
 }
 
+/** Wire format for a size: rounded down to the lot, never up. */
 export function formatSz(contracts: number, inst: Pick<Instrument, "lotSz">): string {
-  return contracts.toFixed(decimals(inst.lotSz));
+  return roundToLot(contracts, inst).toFixed(decimals(inst.lotSz));
 }

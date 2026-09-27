@@ -15,13 +15,20 @@ export interface GateOpts {
   allowNonCrypto: boolean;
 }
 
-/** Hard rule 5: discover, never hard-code. Live, X-Perp, not TEST*, crypto unless allowed, volume and spread gates. */
-export function gateUniverse(instruments: Iterable<Instrument>, tickers: Map<string, Ticker>, g: GateOpts): UniverseResult {
+/** Dated contracts within this many days of expiry are never opened. */
+export const EXPIRY_BUFFER_MS = 3 * 86_400_000;
+
+/**
+ * Discover, never hard-code. Live, perpetual (dated contracts only with ALLOW_NON_CRYPTO and >3 days to expiry),
+ * not TEST*, crypto unless allowed, volume and spread gates.
+ */
+export function gateUniverse(instruments: Iterable<Instrument>, tickers: Map<string, Ticker>, g: GateOpts, now = Date.now()): UniverseResult {
   const tradable: Array<[string, number]> = [];
   const spreadBlocked: string[] = [];
   const unknown: string[] = [];
   for (const i of instruments) {
-    if (i.state !== "live" || !i.instId.includes("_UM_XPERP-") || i.coin.startsWith("TEST")) continue;
+    if (i.state !== "live" || i.coin.startsWith("TEST")) continue;
+    if (!i.perpetual && (!g.allowNonCrypto || i.expiry === null || i.expiry - now < EXPIRY_BUFFER_MS)) continue;
     if (i.kind === "unknown") {
       unknown.push(i.instId);
       continue;

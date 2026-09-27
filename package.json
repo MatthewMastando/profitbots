@@ -1,8 +1,8 @@
 {
-  "name": "beebots",
+  "name": "profitbots",
   "version": "2026.9.27",
   "private": true,
-  "description": "Three AI trading bees on OKX EEA X-Perps, every decision made by Jev",
+  "description": "One AI trading agent on Coinbase Derivatives futures, every decision made by Jev",
   "type": "module",
   "engines": {
     "node": ">=22.13"
@@ -11,29 +11,17 @@
   "pnpm": {
     "onlyBuiltDependencies": [
       "esbuild"
-    ],
-    "ignoredBuiltDependencies": [
-      "@okx_ai/okx-trade-cli"
     ]
   },
   "scripts": {
-    "dev": "DB_PATH=./data/bees-{mode}.sqlite tsx --env-file-if-exists=.env src/index.ts",
+    "dev": "tsx --env-file-if-exists=.env src/index.ts",
     "start": "node dist/index.js",
     "build": "tsc -p tsconfig.build.json",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
-    "test": "vitest run",
-    "universe": "tsx src/tools/universe.ts",
-    "snapshot": "tsx src/tools/snapshot.ts",
-    "parity": "tsx src/tools/parity-market.ts",
-    "e2e:fake-jev": "tsx test/e2e-dry.harness.ts",
-    "jev:check": "tsx --env-file-if-exists=.env src/tools/jev-check.ts",
-    "keycheck": "tsx --env-file-if-exists=.env src/tools/keycheck.ts",
-    "demo:roundtrip": "tsx --env-file-if-exists=.env src/tools/demo-roundtrip.ts",
-    "demo:close": "tsx --env-file-if-exists=.env src/tools/demo-close.ts"
+    "test": "vitest run"
   },
   "dependencies": {
-    "@okx_ai/okx-trade-cli": "1.4.8",
     "@typesafe-ai/sdk": "0.6.0",
     "zod": "^3.25.0"
   },

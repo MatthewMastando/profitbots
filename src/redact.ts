@@ -32,7 +32,7 @@ const PATTERNS: Array<[RegExp, string]> = [
   [/\b(?:[0-9a-fA-F]{1,4}:){1,6}:(?:[0-9a-fA-F]{1,4}:?){0,6}[0-9a-fA-F]{1,4}\b/g, "[ip6]"],
   // Home-directory paths that name a user
   [/\/(?:Users|home)\/[^/\s"']+/g, "~"],
-  // UUIDs (OKX API keys are UUID-shaped)
+  // UUIDs (exchange API keys and portfolio ids are UUID-shaped)
   [/\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}\b/g, MASK],
   // Long hex blobs (secrets, signatures)
   [/\b[0-9a-fA-F]{32,}\b/g, MASK],
@@ -66,7 +66,7 @@ export function redact<T>(value: T, depth = 0): T {
 }
 
 /**
- * OKX and Jev errors can echo request headers or account ids.
+ * Exchange and Jev errors can echo request headers or account ids.
  * Reduce any error to `code + message`, then redact.
  */
 export function safeError(err: unknown): { code: string; message: string } {

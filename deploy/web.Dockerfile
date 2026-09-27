@@ -1,4 +1,4 @@
-# beebots web: the React dashboard built into a Caddy image (automatic HTTPS, reverse proxy to the engine).
+# profitbots web: the React dashboard built into a Caddy image (automatic HTTPS, reverse proxy to the engine).
 # Build context is the repo root; deploy/web.Dockerfile.dockerignore limits it to the dashboard + Caddyfile.
 FROM node:22-bookworm-slim@sha256:43ac6c60b8f89723f746e8a92ce91abd5017e627ce1ddfe4238355d3a30b772c AS build
 WORKDIR /app

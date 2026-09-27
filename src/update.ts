@@ -65,7 +65,7 @@ export class UpdateCheck {
     const f = this.opts.fetch ?? fetch;
     try {
       const res = await f(`https://api.github.com/repos/${this.opts.repo}/releases/latest`, {
-        headers: { accept: "application/vnd.github+json", "user-agent": "beebots-update-check" },
+        headers: { accept: "application/vnd.github+json", "user-agent": "profitbots-update-check" },
         signal: AbortSignal.timeout(TIMEOUT_MS),
       });
       if (!res.ok) {

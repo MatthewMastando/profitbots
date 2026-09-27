@@ -1,4 +1,4 @@
-// Our own crypto / stock / commodity tagging. OKX has no field for this.
+// Our own crypto / stock / commodity tagging. Coinbase has no field for this.
 // Source: docs/xperps_eea_2026-09-24.json. Anything not listed is "unknown" and is never
 // traded (logged at startup so it can be classified by hand). Stocks and commodities need
 // ALLOW_NON_CRYPTO=true, which stays false until their trading hours are verified.
